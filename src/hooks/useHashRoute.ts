@@ -1,33 +1,41 @@
 import { useCallback, useEffect, useState } from 'react'
 import { isAddress, type Address } from 'viem'
+import { DEFAULT_DOC_SECTION, isDocSection, type DocSection } from '../lib/docs'
 
 export type AppRoute =
-  | { view: 'swap' }
-  | { view: 'pools'; pair?: Address }
+  | { view: 'home' }
+  | { view: 'stats' }
   | { view: 'launch'; token?: Address }
-  | { view: 'launch-new' }
-  | { view: 'bridge' }
+  | { view: 'activity' }
+  | { view: 'bbs' }
+  | { view: 'docs'; section?: DocSection }
 
 function hashFor(next: AppRoute): string {
-  if (next.view === 'swap') return '#swap'
-  if (next.view === 'pools') return next.pair ? `#pools/${next.pair}` : '#pools'
-  if (next.view === 'launch-new') return '#launch/new'
-  if (next.view === 'bridge') return '#bridge'
+  if (next.view === 'home') return '#home'
+  if (next.view === 'stats') return '#stats'
+  if (next.view === 'activity') return '#activity'
+  if (next.view === 'bbs') return '#bbs'
+  if (next.view === 'docs') return next.section && next.section !== DEFAULT_DOC_SECTION ? `#docs/${next.section}` : '#docs'
   return next.token ? `#launch/${next.token}` : '#launch'
 }
 
 function readRoute(): AppRoute {
-  const hash = window.location.hash || '#swap'
-  if (hash.startsWith('#pools/')) return { view: 'pools', pair: hash.slice('#pools/'.length) as Address }
-  if (hash === '#pools') return { view: 'pools' }
-  if (hash === '#launch/new') return { view: 'launch-new' }
+  const hash = window.location.hash || '#home'
+  if (hash === '#home') return { view: 'home' }
+  if (hash === '#stats') return { view: 'stats' }
   if (hash.startsWith('#launch/')) {
     const token = hash.slice('#launch/'.length)
     return isAddress(token) ? { view: 'launch', token } : { view: 'launch' }
   }
   if (hash === '#launch') return { view: 'launch' }
-  if (hash === '#bridge' || hash.startsWith('#bridge?')) return { view: 'bridge' }
-  return { view: 'swap' }
+  if (hash === '#activity') return { view: 'activity' }
+  if (hash === '#bbs') return { view: 'bbs' }
+  if (hash.startsWith('#docs/')) {
+    const section = hash.slice('#docs/'.length)
+    return { view: 'docs', section: isDocSection(section) ? section : DEFAULT_DOC_SECTION }
+  }
+  if (hash === '#docs') return { view: 'docs', section: DEFAULT_DOC_SECTION }
+  return { view: 'home' }
 }
 
 export function useHashRoute() {

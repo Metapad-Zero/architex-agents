@@ -2,10 +2,11 @@
   "chainId": 5042,
   "network": "Arc",
   "explorerBase": "https://explorer.arc.io",
-  "factory": "0x0000000000000000000000000000000000000000",
-  "router": "0x0000000000000000000000000000000000000000",
-  "lens": "0x0000000000000000000000000000000000000000",
+  "factory": "0x3648cc1323b4729e472cffdC570C6096565b0923",
+  "router": "0xC373dCf04547515801b4502500924459b8c877a8",
+  "lens": "0x9302f61cbb1f1572F50EB76C794ca623DacD1aDd",
   "launchpad": "0x0000000000000000000000000000000000000000",
+  "bbs": "0x0000000000000000000000000000000000000000",
   "deployer": "0x0000000000000000000000000000000000000000",
   "tokens": [
     {
@@ -25,8 +26,24 @@
   ],
   "pairs": [],
   "txs": {
-    "factory": "0x0000000000000000000000000000000000000000",
-    "router": "0x0000000000000000000000000000000000000000",
-    "lens": "0x0000000000000000000000000000000000000000"
+    "factory": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "router": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "lens": "0x0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "recordedCoreTransactions": {
+    "factory": "0xa2776fad1845395f48132ca38aaf7666577c015738ca663cc05cce38554312df",
+    "router": "0x595b59b6e2ebbbf7f4c6108f7e8d000cc4135efd6c082265af433e7dcc3c5a65",
+    "lens": "0x6b79cf6dbc814fa9adc42ca1b1e6fbbbf64ce0590550321a99ebf562cdc7c6ac"
+  },
+  "coreVerification": {
+    "checkedAt": "2026-10-06T12:40:22.854Z",
+    "runtimeMatchesCompiledSource": true,
+    "codeHashes": {
+      "factory": "0x1827dff8d116c0a50a80f81a84b4d1be45efc57464153edf4e0307e85fc3e075",
+      "router": "0x71a6b789a053c5f16d95d8fc34b89fa75c9715f7a2abc7b748004894d6853ac5",
+      "lens": "0x7a8e3f11b89082f95fb4b117be710b0134273898a95bbf63a8657543b8498091"
+    },
+    "creationReceiptsVerified": false,
+    "note": "The prior core transaction hashes were not found by current Arc mainnet RPC. Retained separately as unverified records; current runtime was matched to compiled source after resolving immutables and excluding CBOR metadata."
   }
 }

@@ -3,9 +3,13 @@ import { requireChain } from './onchain-facts'
 
 export type ArcNetwork = 'testnet' | 'mainnet'
 
-const requestedNetwork: unknown = import.meta.env.VITE_ARC_NETWORK
+const requestedNetwork: unknown = import.meta.env.VITE_ARC_NETWORK ?? 'mainnet'
 
-export const arcNetwork: ArcNetwork = requestedNetwork === 'mainnet' ? 'mainnet' : 'testnet'
+if (requestedNetwork !== 'mainnet' && requestedNetwork !== 'testnet') {
+  throw new Error('VITE_ARC_NETWORK must be mainnet or testnet.')
+}
+
+export const arcNetwork: ArcNetwork = requestedNetwork
 export const activeViemChain = arcNetwork === 'mainnet' ? arc : arcTestnet
 
 const facts = requireChain(activeViemChain.id)
@@ -16,6 +20,10 @@ if (!facts.usdc) {
 
 // The public endpoint is rate-limited; production can point at a dedicated one without a code change.
 const configuredRpc: unknown = import.meta.env.VITE_ARC_RPC_URL
+
+if (configuredRpc !== undefined && (typeof configuredRpc !== 'string' || !configuredRpc.startsWith('https://'))) {
+  throw new Error('VITE_ARC_RPC_URL must be an HTTPS RPC endpoint.')
+}
 
 export const activeChain = {
   id: facts.chainId,

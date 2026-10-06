@@ -106,7 +106,7 @@ input[type='checkbox'], input[type='radio'], input[type='range'] { accent-color:
   }
 
   .nav-tab {
-    @apply relative min-w-12 px-3 text-sm font-semibold sm:min-w-16;
+    @apply relative min-w-12 shrink-0 px-3 text-sm font-semibold sm:min-w-16;
   }
 
   .nav-tab::after {
@@ -116,6 +116,73 @@ input[type='checkbox'], input[type='radio'], input[type='range'] { accent-color:
 
   .nav-tab[data-active='true']::after { @apply bg-ink; }
   .nav-tab:hover { @apply bg-g100; }
+
+  .primary-nav { @apply ml-1 flex h-14 min-w-0 items-stretch overflow-x-auto sm:ml-4; }
+  .site-footer { @apply mx-auto w-full max-w-[1008px] space-y-2 border-t border-g300 px-4 py-8 text-sm leading-6 text-g500 sm:px-6; }
+  .home-page { @apply mx-auto w-full max-w-[1008px] px-4 pb-16 pt-10 sm:px-6 sm:pt-12; }
+  .home-heading { @apply mb-6 flex flex-wrap items-baseline justify-between gap-2; }
+  .home-heading h1 { @apply text-xl font-semibold tracking-[-0.02em]; }
+  .home-heading > span { @apply text-xs text-g500; }
+  .home-section { @apply mt-12; }
+  .home-purpose { @apply mt-6 max-w-2xl text-base leading-6 text-g700; }
+  .gate-exchange { @apply grid min-w-0 border-y border-ink md:grid-cols-2; }
+  .gate-request, .gate-response { @apply min-w-0 py-6 md:py-8; }
+  .gate-request { @apply border-b border-g300 md:border-b-0 md:border-r md:pr-8; }
+  .gate-response { @apply md:pl-8; }
+  .gate-caption { @apply text-xs text-g500; }
+  .gate-status { @apply mt-3 font-mono text-lg font-semibold sm:text-xl; }
+  .gate-request-body { @apply mt-4 block break-words font-mono text-sm; overflow-wrap: anywhere; }
+  .gate-terms { @apply mt-4 font-mono text-sm; }
+  .gate-terms > div { @apply grid grid-cols-[72px_minmax(0,1fr)] gap-3 border-t border-g300 py-2; }
+  .gate-terms dt { @apply text-g500; }
+  .gate-terms dd { @apply m-0 min-w-0; overflow-wrap: anywhere; }
+  .gate-read-state { @apply mt-4 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center; }
+  .gate-read-state p { @apply max-w-2xl text-xs leading-5 text-g500; }
+  .gate-read-state .ghost-button { @apply shrink-0; }
+  .read-error { @apply py-4 text-sm leading-6 text-g700; }
+  .read-error[role='alert'] { @apply text-loss; }
+  .gate-prices table { @apply w-full border-collapse text-left text-sm; }
+  .gate-prices thead { @apply border-y border-ink text-g500; }
+  .gate-prices th, .gate-prices td { @apply border-b border-g300 py-4 align-top; }
+  .gate-prices th { @apply pr-5 font-normal; }
+  .gate-prices th > span { @apply block font-semibold; }
+  .gate-prices th code { @apply mt-1 block whitespace-nowrap text-xs text-g500; }
+  .gate-prices td { @apply w-3/5; }
+  .gate-rules { @apply m-0 list-none p-0; }
+  .gate-rules li { @apply border-b border-g300 py-4 text-sm leading-6 text-g700; }
+  .gate-rules strong { @apply font-semibold text-ink; }
+  .code-sheet { @apply min-w-0 border-y border-g300; }
+  .code-heading { @apply flex min-h-14 items-center justify-between gap-3 border-b border-g300 py-2 text-sm text-g500; }
+  .code-sheet pre { @apply m-0 max-h-[480px] overflow-auto py-5 font-mono text-xs leading-5 sm:text-sm sm:leading-6; }
+  .code-sheet code { @apply font-mono; }
+  .activity-token { @apply flex min-h-11 w-full min-w-0 items-center gap-3 text-left; }
+  .activity-token:hover > span { @apply underline; }
+  .activity-byline { @apply flex flex-wrap items-center gap-x-2 gap-y-1 pl-9 text-xs text-g500; }
+  .actor-label { @apply inline-block rounded border border-g300 px-1 text-2xs leading-4 text-g700; }
+  .wallets-table { @apply w-full border-collapse text-left text-sm; }
+  .wallets-table thead { @apply border-y border-ink text-g500; }
+  .wallets-table th, .wallets-table td { @apply border-b border-g300 py-4 align-top; }
+  .wallets-table thead th { @apply font-normal; }
+  .wallets-table th:nth-child(n + 2), .wallets-table td { @apply pl-4 text-right; }
+  .docs-table-wrap { @apply min-w-0 overflow-x-auto; }
+  .docs-table { @apply w-full border-collapse text-left text-sm; }
+  .docs-table th, .docs-table td { @apply border-b border-g300 px-3 py-3 align-top first:pl-0 last:pr-0; }
+  .docs-table thead { @apply border-y border-ink text-g500; }
+  .docs-table thead th { @apply font-normal; }
+  .docs-list { @apply list-disc space-y-2 pl-5; }
+  .docs-addresses { @apply border-t border-ink; }
+  .docs-addresses > div { @apply grid gap-1 border-b border-g300 py-4; }
+  .docs-addresses dt { @apply text-sm text-g500; }
+  .docs-addresses dd { @apply m-0 min-w-0 break-all text-sm; }
+  .docs-addresses code { @apply font-mono text-xs sm:text-sm; }
+
+  .doc-nav-link {
+    @apply inline-block whitespace-nowrap border-b-2 border-transparent px-3 py-2 text-sm font-semibold text-g500 hover:bg-g100 hover:text-ink sm:block sm:w-full sm:border-b-0 sm:border-l-2 sm:pl-3 sm:pr-2 sm:text-left;
+  }
+
+  .doc-nav-link[data-active='true'] {
+    @apply border-ink text-ink;
+  }
 
   .swap-column {
     @apply mx-auto w-full max-w-[512px] px-4 pb-24 pt-12 sm:px-4 sm:pt-16;
@@ -184,6 +251,12 @@ input[type='checkbox'], input[type='radio'], input[type='range'] { accent-color:
   .receipt-lines dt { @apply shrink-0 whitespace-nowrap text-g500; }
   .receipt-lines dd { @apply m-0 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-right; }
   .quote-message { @apply py-3 text-sm text-g700; }
+
+  /* Three (or more) big tabular figures side by side, divided by hairlines instead of cards. */
+  .stats-grid { @apply grid grid-cols-1 border-t border-ink sm:grid-cols-3; }
+  .stats-grid > div { @apply border-b border-g300 py-4 sm:border-b-0 sm:border-r sm:last:border-r-0 sm:pl-6 sm:first:pl-0; }
+  .stats-grid dt { @apply text-sm text-g500; }
+  .stats-grid dd { @apply m-0 mt-1 font-semibold; }
 
   .hint-line { @apply mt-3 text-sm leading-6 text-g500; }
   .ledger { @apply mt-14 border-t border-ink; }
@@ -292,20 +365,9 @@ input[type='checkbox'], input[type='radio'], input[type='range'] { accent-color:
   .trade-buy { @apply font-semibold; color: var(--gain); }
   .trade-sell { @apply font-semibold; color: var(--loss); }
   .launch-graduated { @apply inline-flex items-center justify-end gap-1 font-semibold; color: var(--gain); }
-  /* On a phone the order is chart, trade, facts: the trade sheet must not sit under a list of figures.
-     From 640px the chart and facts share the left column and the trade sheet holds the right one. */
-  .launch-detail { @apply grid gap-6 sm:grid-cols-2 sm:items-start sm:gap-x-10; grid-template-areas: 'chart' 'trade' 'facts'; }
-  .launch-chart { grid-area: chart; }
-  .launch-trade { grid-area: trade; }
-  .launch-facts { grid-area: facts; }
-  @media (min-width: 640px) {
-    /* The tall trade sheet spans both rows; `auto 1fr` sends its extra height to the second row, so the facts sit right under the chart. */
-    .launch-detail { grid-template-areas: 'chart trade' 'facts trade'; grid-template-rows: auto 1fr; }
-  }
-  /* Grid and flex children refuse to shrink below their content unless told to: the amount row is wide. */
-  .launch-detail > * { @apply min-w-0; }
+  /* A read-only detail page: the chart, then the facts, one column at every width. */
+  .launch-detail { @apply grid min-w-0 gap-6; }
   .token-static { @apply inline-flex min-h-11 shrink-0 items-center gap-2 text-base font-semibold; }
-  .launch-create { @apply relative max-w-xl border-t border-ink pt-8; }
 }
 
 @keyframes rule-sweep {
@@ -319,6 +381,17 @@ input[type='checkbox'], input[type='radio'], input[type='range'] { accent-color:
 }
 
 @media (max-width: 639px) {
+  .gate-prices th code { white-space: normal; overflow-wrap: anywhere; }
+  .gate-prices th { padding-right: 12px; }
+  .gate-prices td { width: 55%; }
+  .wallets-table thead { @apply sr-only; }
+  .wallets-table, .wallets-table tbody { display: block; }
+  .wallets-table tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--g300); }
+  .wallets-table th, .wallets-table td { border: 0; padding: 0; }
+  .wallets-table th { grid-column: 1 / -1; }
+  .wallets-table td { text-align: left; }
+  .wallets-table td::before { content: attr(data-label); display: block; font-size: 12px; color: var(--g500); }
+  .wallets-table td:last-child { grid-column: 1 / -1; }
   .amount-input { font-size: 1.75rem; }
   .token-popover, .settings-popover, .connect-sheet, .unlock-sheet {
     inset: auto 16px 16px 16px !important;

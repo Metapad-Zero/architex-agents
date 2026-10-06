@@ -3,16 +3,58 @@
   "framework": "vite",
   "headers": [
     {
+      "source": "/downloads/architex-agents-mcp.tar.gz",
+      "headers": [
+        { "key": "Content-Type", "value": "application/gzip" },
+        { "key": "Content-Disposition", "value": "attachment; filename=\"architex-agents-mcp.tar.gz\"" },
+        { "key": "Content-Encoding", "value": "identity" },
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    },
+    {
       "source": "/(.*)",
       "headers": [
-        { "key": "Content-Security-Policy", "value": "frame-ancestors 'self' https://studio.arc.io" },
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+        {
+          "key": "Content-Security-Policy",
+          "value": "frame-ancestors 'self' https://studio.arc.io"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        }
       ]
     },
     {
       "source": "/assets/(.*)",
-      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
     }
-  ]
+  ],
+  "rewrites": [
+    {
+      "source": "/x402",
+      "destination": "/api/x402"
+    },
+    {
+      "source": "/x402/:path*",
+      "destination": "/api/x402?path=:path*"
+    },
+    {
+      "source": "/openapi.json",
+      "destination": "/api/x402?path=openapi.json"
+    }
+  ],
+  "functions": {
+    "api/x402.ts": {
+      "maxDuration": 60
+    }
+  }
 }

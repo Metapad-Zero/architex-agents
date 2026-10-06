@@ -1,39 +1,45 @@
 import { lazy, Suspense } from 'react'
 import { AppShell } from './components/AppShell'
-import { SwapSheet } from './components/SwapSheet'
 import { TableSkeleton } from './components/Skeleton'
 import { useHashRoute } from './hooks/useHashRoute'
-import { isLaunchViewAvailable } from './lib/deployment'
 
-const PoolsView = lazy(() => import('./components/PoolsView').then((module) => ({ default: module.PoolsView })))
+const HomeView = lazy(() => import('./components/HomeView').then((module) => ({ default: module.HomeView })))
+const StatsView = lazy(() => import('./components/StatsView').then((module) => ({ default: module.StatsView })))
 const LaunchView = lazy(() => import('./components/LaunchView').then((module) => ({ default: module.LaunchView })))
-const BridgeView = lazy(() => import('./components/BridgeView').then((module) => ({ default: module.BridgeView })))
+const DocsView = lazy(() => import('./components/DocsView').then((module) => ({ default: module.DocsView })))
+const ActivityView = lazy(() => import('./components/ActivityView').then((module) => ({ default: module.ActivityView })))
+const BBSView = lazy(() => import('./components/BBSView').then((module) => ({ default: module.BBSView })))
+
+const fallback = <div className="pools-page"><TableSkeleton rows={5} /></div>
 
 export default function App() {
   const { route, setRoute } = useHashRoute()
-  const launchRoute = isLaunchViewAvailable && (route.view === 'launch' || route.view === 'launch-new')
   return (
     <AppShell route={route} onRoute={setRoute}>
-      {route.view === 'pools' ? (
-        <Suspense fallback={<div className="pools-page"><TableSkeleton rows={5} /></div>}>
-          <PoolsView selectedPair={route.pair} onSelectPair={(pair) => setRoute({ view: 'pools', pair })} />
+      {route.view === 'home' ? (
+        <Suspense fallback={fallback}>
+          <HomeView onOpenLaunch={(token) => setRoute({ view: 'launch', token })} />
         </Suspense>
-      ) : launchRoute ? (
-        <Suspense fallback={<div className="pools-page"><TableSkeleton rows={5} /></div>}>
-          <LaunchView
-            token={route.view === 'launch' ? route.token : undefined}
-            creating={route.view === 'launch-new'}
-            onOpen={(token) => setRoute({ view: 'launch', token })}
-            onCreate={() => setRoute({ view: 'launch-new' })}
-            onCreated={(token) => setRoute({ view: 'launch', token })}
-          />
+      ) : route.view === 'launch' ? (
+        <Suspense fallback={fallback}>
+          <LaunchView token={route.token} onOpen={(token) => setRoute({ view: 'launch', token })} />
         </Suspense>
-      ) : route.view === 'bridge' ? (
-        <Suspense fallback={<div className="pools-page"><TableSkeleton rows={5} /></div>}>
-          <BridgeView />
+      ) : route.view === 'docs' ? (
+        <Suspense fallback={fallback}>
+          <DocsView section={route.section} onSection={(section) => setRoute({ view: 'docs', section })} />
+        </Suspense>
+      ) : route.view === 'activity' ? (
+        <Suspense fallback={fallback}>
+          <ActivityView onOpenLaunch={(token) => setRoute({ view: 'launch', token })} />
+        </Suspense>
+      ) : route.view === 'bbs' ? (
+        <Suspense fallback={fallback}>
+          <BBSView />
         </Suspense>
       ) : (
-        <SwapSheet />
+        <Suspense fallback={fallback}>
+          <StatsView onOpenLaunch={(token) => setRoute({ view: 'launch', token })} />
+        </Suspense>
       )}
     </AppShell>
   )

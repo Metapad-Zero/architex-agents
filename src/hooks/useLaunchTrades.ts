@@ -132,13 +132,13 @@ export function useLaunchTrades(token: Address | undefined, createdAt: number | 
   }
 
   const trades = query.data?.trades ?? []
-  const historyComplete = query.data?.complete ?? true
+  const historyComplete = query.data?.complete ?? false
   return {
     trades,
     historyComplete,
     /** True when `trades` is every trade since the token was created, not just the newest page of them. */
     reachesCreation: Boolean(query.data) && historyComplete && trades.length < MAX_TRADES,
-    isLoading: query.isLoading,
+    isLoading: isLaunchpadDeployed && Boolean(token) && createdAt !== undefined && query.isLoading,
     error: query.error,
     version: 0,
   }

@@ -13,7 +13,7 @@ export const CURVE = {
   VIRTUAL_TOKENS_0: 1_066_666_667n * E18,
   // A curve raises 3x this: 25,000 USDC, the USDC side of the pool that opens at graduation.
   VIRTUAL_USDC_0: 8_333_333_333n,
-  FEE_BPS: 50n,
+  FEE_BPS: 12n,
 } as const
 
 export interface CurveState {

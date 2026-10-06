@@ -17,7 +17,7 @@ describe('bonding curve', () => {
   test('opens near a $6,250 market cap and a first $100 buys about 1.26% of supply', () => {
     expect(marketCap(INITIAL_CURVE)).toBe(6_249_999_997n)
     const quote = quoteBuy(INITIAL_CURVE, 100n * USDC)
-    expect(quote.fee).toBe(500_000n)
+    expect(quote.fee).toBe(120_000n)
     expect(quote.usdcSpent).toBe(100n * USDC)
     expect(quote.graduates).toBe(false)
     const percentOfSupplyX1000 = (quote.tokensOut * 100_000n) / CURVE.TOTAL_SUPPLY
@@ -29,8 +29,8 @@ describe('bonding curve', () => {
     expect(quote.tokensOut).toBe(CURVE.CURVE_SUPPLY)
     expect(quote.graduates).toBe(true)
     expect(quote.next.tokensSold).toBe(CURVE.CURVE_SUPPLY)
-    // about 25,000 USDC raised plus the 0.5% fee on top, nowhere near the 1,000,000 offered
-    expect(quote.usdcSpent > 25_125n * USDC && quote.usdcSpent < 25_126n * USDC).toBe(true)
+    // about 25,000 USDC raised plus the 0.12% fee on top, nowhere near the 1,000,000 offered
+    expect(quote.usdcSpent > 25_030n * USDC && quote.usdcSpent < 25_031n * USDC).toBe(true)
     expect(realUsdc(quote.next) > 24_999n * USDC && realUsdc(quote.next) <= 25_000n * USDC).toBe(true)
     expect(progressBps(quote.next)).toBe(10_000n)
   })
@@ -120,7 +120,7 @@ describe('bonding curve', () => {
 
   test('no trade is free: fees round up, and dust that buys nothing is refused', () => {
     expect(quoteBuy(INITIAL_CURVE, 199n).fee).toBe(1n)
-    expect(quoteBuy(INITIAL_CURVE, 1_000_000n).fee).toBe(5_000n)
+    expect(quoteBuy(INITIAL_CURVE, 1_000_000n).fee).toBe(1_200n)
     expect(() => quoteBuy(INITIAL_CURVE, 1n)).toThrow('ZeroAmount')
     const held = quoteBuy(INITIAL_CURVE, 100n * USDC)
     expect(() => quoteSell(held.next, 1n)).toThrow('ZeroAmount')

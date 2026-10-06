@@ -1,0 +1,22 @@
+{
+  "name": "architex-agent-mcp",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "MCP server exposing the Architex launchpad (bonding-curve meme-coin launches) to AI agents.",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@x402/evm": "2.26.0",
+    "@x402/fetch": "2.26.0",
+    "viem": "^2.56.3",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.3"
+  }
+}

@@ -1,0 +1,25 @@
+# Once this file exists it decides what is uploaded, so secrets are listed here as well as in .gitignore.
+.env
+.env.*
+.env*
+**/.env*
+.vercel
+.git
+
+# Not needed to build or serve the site and its gate. Anchored to the root on purpose:
+# a bare "lib" would also drop src/lib.
+node_modules
+**/node_modules
+**/__tests__
+/dist
+/dist-relayer
+/.arc-studio
+/.arc-studio-out
+/.agents
+/.claude
+/.impeccable
+/.playwright-mcp
+/contracts
+/broadcast
+/lib
+/cache

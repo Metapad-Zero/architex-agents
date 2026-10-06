@@ -1,8 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-/// @notice Frozen ABI of the Architex launchpad (docs/launchpad/LAUNCHPAD-SPEC.md). The frontend is built against it.
+import {IERC3009} from "./IERC3009.sol";
+
+/// @notice Authorization-only launchpad. Read views and indexing event shapes retain the curve ABI.
 interface IArchitexLaunchpad {
+    struct LaunchParams {
+        string name;
+        string symbol;
+        string metadataURI;
+        uint256 initialBuyUsdc;
+        uint256 minTokensOut;
+    }
+
     struct Curve {
         address token;
         address creator;
@@ -61,16 +71,23 @@ interface IArchitexLaunchpad {
     function FEE_BPS() external view returns (uint256);
     function MAX_LAUNCH_FEE() external view returns (uint256);
 
-    /// @param initialBuyUsdc gross USDC the creator spends on the curve in the same transaction (0 for none)
-    function createToken(string calldata name, string calldata symbol, string calldata metadataURI, uint256 initialBuyUsdc, uint256 minTokensOut)
-        external
-        returns (address token);
+    event Relayed(address indexed relayer, address indexed from, bytes32 indexed nonce, uint8 action, bool bound, uint256 relayFee);
+    event RelayerUpdated(address indexed relayer, bool allowed);
+    event RelayFeesUpdated(uint256 tradeRelayFee, uint256 launchRelayFee);
+    error RelayFeeTooHigh();
+    error RelayFeeExceedsProceeds();
 
-    /// @return tokensOut tokens received @return usdcSpent gross USDC actually pulled (less than usdcIn only on the buy that sells out the curve)
-    function buy(address token, uint256 usdcIn, uint256 minTokensOut, address to) external returns (uint256 tokensOut, uint256 usdcSpent);
-
-    /// @return usdcOut USDC received after the fee
-    function sell(address token, uint256 tokensIn, uint256 minUsdcOut, address to) external returns (uint256 usdcOut);
+    function launchWithAuthorization(LaunchParams calldata params, bytes32 salt, IERC3009.Authorization calldata auth, bytes calldata signature, bytes32 settlementTransaction) external returns (address token, uint256 tokensOut);
+    function buyWithAuthorization(address token, uint256 minTokensOut, bytes32 salt, IERC3009.Authorization calldata auth, bytes calldata signature, bytes32 settlementTransaction) external returns (uint256 tokensOut, uint256 usdcSpent);
+    function sellWithAuthorization(address token, uint256 minUsdcOut, bytes32 salt, IERC3009.Authorization calldata auth, bytes calldata signature) external returns (uint256 usdcOut);
+    function launchNonce(LaunchParams calldata params, bytes32 salt) external pure returns (bytes32);
+    function buyNonce(address token, uint256 minTokensOut, bytes32 salt) external pure returns (bytes32);
+    function sellNonce(address token, uint256 minUsdcOut, bytes32 salt) external pure returns (bytes32);
+    function isRelayer(address caller) external view returns (bool);
+    function tradeRelayFee() external view returns (uint256);
+    function launchRelayFee() external view returns (uint256);
+    function setRelayer(address relayer, bool allowed) external;
+    function setRelayFees(uint256 tradeFee, uint256 launchFee_) external;
 
     function quoteBuy(address token, uint256 usdcIn) external view returns (uint256 tokensOut, uint256 fee, uint256 usdcSpent, bool graduates);
     function quoteSell(address token, uint256 tokensIn) external view returns (uint256 usdcOut, uint256 fee);

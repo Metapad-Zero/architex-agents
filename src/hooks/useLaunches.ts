@@ -96,8 +96,11 @@ export function useLaunches() {
 
   return {
     launches,
+    total: fixtureOn ? BigInt(launches.length) : lengthQuery.data,
+    isConfigured: fixtureOn || isLaunchpadDeployed,
     isLoading: !fixtureOn && isLaunchpadDeployed && (lengthQuery.isLoading || pageQuery.isLoading),
     error: fixtureOn ? null : lengthQuery.error ?? pageQuery.error,
+    metadataError: fixtureOn ? null : metaQuery.error,
     refetch,
   }
 }

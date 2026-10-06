@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import "../interfaces/IArchitexLaunchpad.sol";
-import "../interfaces/IArchitexFactory.sol";
-import "../interfaces/IArchitexPair.sol";
-import "../interfaces/ILaunchToken.sol";
-import "./LaunchToken.sol";
+import {AuthorizationGate} from "../agents/AuthorizationGate.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {IArchitexLaunchpad} from "../interfaces/IArchitexLaunchpad.sol";
+import {IERC3009} from "../interfaces/IERC3009.sol";
+import {IArchitexFactory} from "../interfaces/IArchitexFactory.sol";
+import {IArchitexPair} from "../interfaces/IArchitexPair.sol";
+import {ILaunchToken} from "../interfaces/ILaunchToken.sol";
+import {LaunchToken} from "./LaunchToken.sol";
 
-/// @title ArchitexLaunchpad v1.2
+/// @title ArchitexLaunchpad v2
 /// @notice Bonding-curve token launches that graduate into Architex AMM pools.
 ///
 /// Each token gets a constant-product virtual reserve curve:
@@ -28,13 +29,13 @@ import "./LaunchToken.sol";
 /// The router is deliberately NOT used; direct pair.mint() is immune to sync-attack.
 ///
 /// Arc trap: native USDC (18-dec) and ERC-20 USDC (6-dec) are the same balance on Arc.
-/// We never call balanceOf or address.balance for accounting — all amounts come from
-/// the stored virtual reserves.
+/// Curve obligations come from stored reserves. balanceOf is only used to verify a
+/// payment amount and protect accounted obligations during trusted external recovery.
 ///
 /// Fee-on-transfer / rebasing tokens are NOT supported (only USDC and LaunchTokens).
 /// @dev `name`, `symbol`, `metadataURI` are untrusted bytes — length limits only,
 ///      no charset validation, no HTML escaping. Rendering rules live in FRONTEND-BRIEF.md.
-contract ArchitexLaunchpad is IArchitexLaunchpad, ReentrancyGuard {
+contract ArchitexLaunchpad is IArchitexLaunchpad, AuthorizationGate {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
 
@@ -55,9 +56,19 @@ contract ArchitexLaunchpad is IArchitexLaunchpad, ReentrancyGuard {
     ///      thin. The shape is unchanged: a 16x price rise, from a 6,250 to a 100,000 USDC market cap.
     uint256 public constant VIRTUAL_USDC_0 = 8_333_333_333;
     /// @inheritdoc IArchitexLaunchpad
-    uint256 public constant FEE_BPS = 50;
+    uint256 public constant FEE_BPS = 12;
     /// @inheritdoc IArchitexLaunchpad
     uint256 public constant MAX_LAUNCH_FEE = 100e6;
+
+    uint256 public constant MAX_TRADE_RELAY_FEE = 50_000;
+    uint256 public constant MAX_LAUNCH_RELAY_FEE = 500_000;
+    uint256 public tradeRelayFee = 10_000;
+    uint256 public launchRelayFee = 150_000;
+    mapping(address => bool) public isRelayer;
+    uint256 public liveCurveReserves;
+    bytes32 public constant LAUNCH_TYPEHASH = keccak256("Launch(string name,string symbol,string metadataURI,uint256 initialBuyUsdc,uint256 minTokensOut,bytes32 salt)");
+    bytes32 public constant BUY_TYPEHASH = keccak256("Buy(address token,uint256 minTokensOut,bytes32 salt)");
+    bytes32 public constant SELL_TYPEHASH = keccak256("Sell(address token,uint256 minUsdcOut,bytes32 salt)");
 
     address private constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
@@ -100,7 +111,7 @@ contract ArchitexLaunchpad is IArchitexLaunchpad, ReentrancyGuard {
     ) {
         if (_usdc == address(0)) revert ZeroAddress();
         if (_factory == address(0)) revert ZeroAddress();
-        if (_feeTo == address(0)) revert ZeroAddress();
+        if (_feeTo == address(0) || _feeTo == address(this)) revert ZeroAddress();
         if (_feeToSetter == address(0)) revert ZeroAddress();
         if (_launchFee > MAX_LAUNCH_FEE) revert LaunchFeeTooHigh();
         usdc = _usdc;
@@ -151,7 +162,7 @@ contract ArchitexLaunchpad is IArchitexLaunchpad, ReentrancyGuard {
     /// @inheritdoc IArchitexLaunchpad
     /// @notice Permissionless: sends `pendingFees` to `feeTo`. Safe to call at any time;
     ///         a reverting feeTo reverts only this call, never a trade.
-    function collectFees() external returns (uint256 amount) {
+    function collectFees() external nonReentrant returns (uint256 amount) {
         amount = pendingFees;
         if (amount == 0) return 0;
         pendingFees = 0;
@@ -159,130 +170,122 @@ contract ArchitexLaunchpad is IArchitexLaunchpad, ReentrancyGuard {
         emit FeesCollected(feeTo, amount);
     }
 
-    // ─── Token creation ───────────────────────────────────────────────────────
+    function _paymentUsdc() internal view override returns (address) { return usdc; }
+    function _allowedRelayer(address caller) internal view override returns (bool) { return isRelayer[caller]; }
+    function accountedUsdc() public view override returns (uint256) { return liveCurveReserves + pendingFees; }
 
-    /// @inheritdoc IArchitexLaunchpad
-    /// @notice Deploys a new LaunchToken, registers its curve, and optionally performs
-    ///         the creator's first buy atomically (anti-snipe protection).
-    ///         `name`/`symbol`/`metadataURI` are untrusted bytes; length limits enforced only.
-    function createToken(
-        string calldata name,
-        string calldata symbol,
-        string calldata metadataURI,
-        uint256 initialBuyUsdc,
-        uint256 minTokensOut
-    ) external nonReentrant returns (address token) {
-        // ── Validate metadata lengths ─────────────────────────────────────────
-        if (bytes(name).length == 0 || bytes(name).length > 32) revert InvalidName();
-        if (bytes(symbol).length == 0 || bytes(symbol).length > 10) revert InvalidSymbol();
-        if (bytes(metadataURI).length > 256) revert InvalidMetadata();
+    function setRelayer(address relayer, bool allowed) external {
+        if (msg.sender != feeToSetter) revert Forbidden();
+        if (relayer == address(0)) revert ZeroAddress();
+        isRelayer[relayer] = allowed;
+        emit RelayerUpdated(relayer, allowed);
+    }
 
-        // ── Accrue launch fee (pull from creator; accrued, not pushed) ────────
-        if (launchFee > 0) {
-            IERC20(usdc).safeTransferFrom(msg.sender, address(this), launchFee);
-            pendingFees += launchFee;
-        }
+    function setRelayFees(uint256 tradeFee, uint256 launchFee_) external {
+        if (msg.sender != feeToSetter) revert Forbidden();
+        if (tradeFee > MAX_TRADE_RELAY_FEE || launchFee_ > MAX_LAUNCH_RELAY_FEE) revert RelayFeeTooHigh();
+        tradeRelayFee = tradeFee;
+        launchRelayFee = launchFee_;
+        emit RelayFeesUpdated(tradeFee, launchFee_);
+    }
 
-        // ── Deploy token ──────────────────────────────────────────────────────
-        LaunchToken lt = new LaunchToken(name, symbol);
+    function launchNonce(LaunchParams calldata p, bytes32 salt) public pure returns (bytes32) {
+        return _boundNonce(keccak256(abi.encode(LAUNCH_TYPEHASH, keccak256(bytes(p.name)), keccak256(bytes(p.symbol)), keccak256(bytes(p.metadataURI)), p.initialBuyUsdc, p.minTokensOut, salt)));
+    }
+
+    function buyNonce(address token, uint256 minTokensOut, bytes32 salt) public pure returns (bytes32) {
+        return _boundNonce(keccak256(abi.encode(BUY_TYPEHASH, token, minTokensOut, salt)));
+    }
+
+    function sellNonce(address token, uint256 minUsdcOut, bytes32 salt) public pure returns (bytes32) {
+        return _boundNonce(keccak256(abi.encode(SELL_TYPEHASH, token, minUsdcOut, salt)));
+    }
+
+    function _relayMode(bytes32 commitment, bytes32 nonce) private view returns (bool bound) {
+        bound = _boundAuthorization(commitment, nonce);
+        if (!bound && !isRelayer[msg.sender]) revert Forbidden();
+    }
+
+    /// @notice Stock random nonces require an allowlisted relayer. A matching action commitment
+    ///         allows anyone to submit; external settlement recovery always trusts an allowed relayer.
+    function launchWithAuthorization(LaunchParams calldata p, bytes32 salt, IERC3009.Authorization calldata auth, bytes calldata signature, bytes32 settlementTransaction)
+        external nonReentrant returns (address token, uint256 tokensOut)
+    {
+        if (bytes(p.name).length == 0 || bytes(p.name).length > 32) revert InvalidName();
+        if (bytes(p.symbol).length == 0 || bytes(p.symbol).length > 10) revert InvalidSymbol();
+        if (bytes(p.metadataURI).length > 256) revert InvalidMetadata();
+        bool bound = _relayMode(launchNonce(p, salt), auth.nonce);
+        uint256 relayFee = launchRelayFee;
+        uint256 expected = launchFee + relayFee + p.initialBuyUsdc;
+        if (auth.value != expected) revert PaymentValueMismatch(expected, auth.value);
+        _takeUsdc(auth, signature, settlementTransaction);
+        pendingFees += launchFee;
+
+        LaunchToken lt = new LaunchToken(p.name, p.symbol);
         token = address(lt);
-
-        // ── Resolve / create the Architex pair ───────────────────────────────
-        // Never reverts because the pair already exists (attacker can pre-create it).
-        address _pair = IArchitexFactory(factory).getPair(token, usdc);
-        if (_pair == address(0)) {
-            _pair = IArchitexFactory(factory).createPair(token, usdc);
-        }
-        lt.initPair(_pair);
-
-        // ── Register curve ────────────────────────────────────────────────────
+        address pair = IArchitexFactory(factory).getPair(token, usdc);
+        if (pair == address(0)) pair = IArchitexFactory(factory).createPair(token, usdc);
+        lt.initPair(pair);
         _curves[token] = Curve({
-            token: token,
-            creator: msg.sender,
-            pair: _pair,
-            virtualUsdc: VIRTUAL_USDC_0.toUint128(),
-            virtualTokens: VIRTUAL_TOKENS_0.toUint128(),
-            tokensSold: 0,
-            createdAt: uint64(block.timestamp),
-            graduated: false,
-            metadataURI: metadataURI
+            token: token, creator: auth.from, pair: pair,
+            virtualUsdc: VIRTUAL_USDC_0.toUint128(), virtualTokens: VIRTUAL_TOKENS_0.toUint128(),
+            tokensSold: 0, createdAt: block.timestamp.toUint64(), graduated: false, metadataURI: p.metadataURI
         });
         _tokens.push(token);
-
-        emit TokenCreated(token, msg.sender, _pair, name, symbol, metadataURI);
-
-        // ── Optional creator first buy (anti-snipe; uses internal _buy) ───────
-        // initialBuyUsdc == 0 skips entirely and does NOT revert ZeroAmount.
-        if (initialBuyUsdc > 0) {
-            _buy(token, initialBuyUsdc, minTokensOut, msg.sender);
-        }
+        emit TokenCreated(token, auth.from, pair, p.name, p.symbol, p.metadataURI);
+        if (p.initialBuyUsdc > 0) (tokensOut,) = _buy(token, p.initialBuyUsdc, p.minTokensOut, auth.from);
+        if (relayFee > 0) IERC20(usdc).safeTransfer(msg.sender, relayFee);
+        emit Relayed(msg.sender, auth.from, auth.nonce, 0, bound, relayFee);
     }
 
-    // ─── Trading ─────────────────────────────────────────────────────────────
-
-    /// @inheritdoc IArchitexLaunchpad
-    /// @notice Buy tokens from the curve. On the sell-out buy, pulls only usdcSpent
-    ///         (which is <= usdcIn — never pull-then-refund). Graduates atomically when the
-    ///         last token is sold.
-    function buy(
-        address token,
-        uint256 usdcIn,
-        uint256 minTokensOut,
-        address to
-    ) external nonReentrant returns (uint256 tokensOut, uint256 usdcSpent) {
-        return _buy(token, usdcIn, minTokensOut, to);
+    function buyWithAuthorization(address token, uint256 minTokensOut, bytes32 salt, IERC3009.Authorization calldata auth, bytes calldata signature, bytes32 settlementTransaction)
+        external nonReentrant returns (uint256 tokensOut, uint256 usdcSpent)
+    {
+        bool bound = _relayMode(buyNonce(token, minTokensOut, salt), auth.nonce);
+        uint256 relayFee = tradeRelayFee;
+        if (auth.value <= relayFee) revert ZeroAmount();
+        _takeUsdc(auth, signature, settlementTransaction);
+        (tokensOut, usdcSpent) = _buy(token, auth.value - relayFee, minTokensOut, auth.from);
+        if (relayFee > 0) IERC20(usdc).safeTransfer(msg.sender, relayFee);
+        emit Relayed(msg.sender, auth.from, auth.nonce, 1, bound, relayFee);
     }
 
-    /// @inheritdoc IArchitexLaunchpad
-    /// @notice Sell tokens into the curve. Uses launchpadPull — no ERC-20 approval needed.
-    ///         `to` is the USDC recipient; `trader` is always msg.sender.
-    function sell(
-        address token,
-        uint256 tokensIn,
-        uint256 minUsdcOut,
-        address to
-    ) external nonReentrant returns (uint256 usdcOut) {
+    function sellWithAuthorization(address token, uint256 minUsdcOut, bytes32 salt, IERC3009.Authorization calldata auth, bytes calldata signature)
+        external nonReentrant returns (uint256 usdcOut)
+    {
+        bool bound = _relayMode(sellNonce(token, minUsdcOut, salt), auth.nonce);
         Curve storage c = _curves[token];
         if (c.token == address(0)) revert UnknownToken();
         if (c.graduated) revert CurveGraduated();
-
-        uint256 vUsdc = c.virtualUsdc;
-        uint256 vTokens = c.virtualTokens;
-
-        // ── Guards + math, the one path quoteSell also takes ──────────────────
         uint256 gross;
         uint256 fee;
-        (gross, fee, usdcOut) = _sellQuote(c, tokensIn);
+        (gross, fee, usdcOut) = _sellQuote(c, auth.value);
+        uint256 relayFee = tradeRelayFee;
+        if (usdcOut <= relayFee) revert RelayFeeExceedsProceeds();
+        usdcOut -= relayFee;
         if (usdcOut < minUsdcOut) revert SlippageExceeded();
-
-        // ── Effects ───────────────────────────────────────────────────────────
-        uint256 newVUsdc   = vUsdc - gross;
-        uint256 newVTokens = vTokens + tokensIn;
-        c.virtualUsdc   = newVUsdc.toUint128();
+        _pullAuthorization(token, auth, signature);
+        uint256 newVUsdc = uint256(c.virtualUsdc) - gross;
+        uint256 newVTokens = uint256(c.virtualTokens) + auth.value;
+        c.virtualUsdc = newVUsdc.toUint128();
         c.virtualTokens = newVTokens.toUint128();
-        c.tokensSold    = (uint256(c.tokensSold) - tokensIn).toUint128();
-
-        // Accrue fee (never push — feeTo cannot block a sell)
+        c.tokensSold = (uint256(c.tokensSold) - auth.value).toUint128();
+        liveCurveReserves -= gross;
         pendingFees += fee;
-
-        emit Trade(token, msg.sender, false, gross, tokensIn, fee, newVUsdc, newVTokens);
-
-        // ── Interactions ──────────────────────────────────────────────────────
-        // Pull tokens from seller via launchpadPull (no ERC-20 approval needed).
-        // Always msg.sender — never a user-supplied `from`.
-        ILaunchToken(token).launchpadPull(msg.sender, tokensIn);
-        // Send net USDC to recipient
-        IERC20(usdc).safeTransfer(to, usdcOut);
+        emit Trade(token, auth.from, false, gross, auth.value, fee, newVUsdc, newVTokens);
+        IERC20(usdc).safeTransfer(auth.from, usdcOut);
+        if (relayFee > 0) IERC20(usdc).safeTransfer(msg.sender, relayFee);
+        emit Relayed(msg.sender, auth.from, auth.nonce, 2, bound, relayFee);
     }
 
     // ─── Internal buy logic ───────────────────────────────────────────────────
 
-    /// @dev Shared by buy() and createToken(). The nonReentrant guard is held by the caller.
+    /// @dev Payment is already received. Only the authorized actor receives tokens/refunds.
     function _buy(
         address token,
         uint256 usdcIn,
         uint256 minTokensOut,
-        address to
+        address actor
     ) internal returns (uint256 tokensOut, uint256 usdcSpent) {
         Curve storage c = _curves[token];
         if (c.token == address(0)) revert UnknownToken();
@@ -311,14 +314,13 @@ contract ArchitexLaunchpad is IArchitexLaunchpad, ReentrancyGuard {
 
         // Accrue fee (never push — feeTo cannot block a buy or graduation)
         pendingFees += fee;
+        liveCurveReserves += net;
 
-        emit Trade(token, msg.sender, true, usdcSpent, tokensOut, fee, newVUsdc, newVTokens);
+        emit Trade(token, actor, true, usdcSpent, tokensOut, fee, newVUsdc, newVTokens);
 
         // ── Interactions ──────────────────────────────────────────────────────
-        // Pull exact usdcSpent from buyer (never pull-then-refund; usdcSpent <= usdcIn)
-        IERC20(usdc).safeTransferFrom(msg.sender, address(this), usdcSpent);
-        // Send tokens to recipient
-        IERC20(token).safeTransfer(to, tokensOut);
+        IERC20(token).safeTransfer(actor, tokensOut);
+        if (usdcIn > usdcSpent) IERC20(usdc).safeTransfer(actor, usdcIn - usdcSpent);
 
         // ── Graduation (atomic inside the sell-out buy) ───────────────────────
         if (graduates) {
@@ -343,6 +345,7 @@ contract ArchitexLaunchpad is IArchitexLaunchpad, ReentrancyGuard {
         require(IArchitexPair(_pair).totalSupply() == 0, "pair already seeded");
 
         // (c) Mark graduated; opens transfer-to-pair for token
+        liveCurveReserves -= usdcSeeded;
         c.graduated = true;
         ILaunchToken(token).markGraduated();
 

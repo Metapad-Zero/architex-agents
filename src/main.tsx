@@ -21,9 +21,7 @@ import { createRoot } from 'react-dom/client'
 import { WagmiProvider } from 'wagmi'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { config } from './config'
-import { ConnectSheetProvider } from './hooks/useConnectSheet'
 import { ErrorBoundary } from './components/ErrorBoundary'
-import { UnlockSheet } from './components/UnlockSheet'
 import App from './App'
 import './index.css'
 
@@ -34,10 +32,7 @@ createRoot(document.getElementById('root')!).render(
     <ErrorBoundary>
       <WagmiProvider config={config}>
         <QueryClientProvider client={queryClient}>
-          <ConnectSheetProvider>
-            <App />
-            <UnlockSheet />
-          </ConnectSheetProvider>
+          <App />
         </QueryClientProvider>
       </WagmiProvider>
     </ErrorBoundary>

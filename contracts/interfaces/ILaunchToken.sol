@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC3009} from "./IERC3009.sol";
 
 /// @notice A token launched on the Architex launchpad: fixed 1B supply, no owner, no mint after construction.
-interface ILaunchToken is IERC20 {
+interface ILaunchToken is IERC20, IERC3009 {
     error OnlyLaunchpad();
     error PairAlreadySet();
     error AlreadyGraduated();
@@ -18,7 +19,7 @@ interface ILaunchToken is IERC20 {
     function initPair(address pair) external;
     /// @notice Launchpad only, once: opens transfers to the pair.
     function markGraduated() external;
-    /// @notice Launchpad only: moves a seller's tokens back to the curve without an ERC-20 approval.
-    ///         The launchpad only ever passes its own `msg.sender` as `from`.
-    function launchpadPull(address from, uint256 amount) external;
+    function nonces(address owner) external view returns (uint256);
+    function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external;
+    function permit(address owner, address spender, uint256 value, uint256 deadline, bytes calldata signature) external;
 }

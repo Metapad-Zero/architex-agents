@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Address } from 'viem'
 import { addressExplorerUrl, txExplorerUrl } from '../chain'
+import { agentLabel } from '../lib/agents'
 import { useLaunch } from '../hooks/useLaunch'
 import { useLaunchTrades } from '../hooks/useLaunchTrades'
 import { useTokenMetadata } from '../hooks/useTokenMetadata'
@@ -12,7 +13,6 @@ import { linkLabel } from '../lib/tokenMetadata'
 import { ExternalLinkIcon } from './Icons'
 import { GhostButton } from './GhostButton'
 import { LaunchMeter, LaunchTokenMark } from './LaunchBits'
-import { LaunchTradeSheet } from './LaunchTradeSheet'
 import { PriceHistory, type SeriesPoint } from './PriceHistory'
 import { TableSkeleton } from './Skeleton'
 
@@ -26,8 +26,8 @@ function formatCap(value: number): string {
 }
 
 export function LaunchDetail({ token, onBack }: LaunchDetailProps) {
-  const { launch, token: launchToken, usdc, tokenBalance, usdcBalance, usdcAllowance, isLoading, unknown, refetch } = useLaunch(token)
-  const { trades, historyComplete, reachesCreation, isLoading: tradesLoading } = useLaunchTrades(token, launch ? Number(launch.createdAt) : undefined)
+  const { launch, token: launchToken, isLoading, unknown, isConfigured, error, metadataError } = useLaunch(token)
+  const { trades, historyComplete, reachesCreation, isLoading: tradesLoading, error: tradesError } = useLaunchTrades(token, launch ? Number(launch.createdAt) : undefined)
   // Market cap after each trade, oldest first. The creation point is only drawn when every trade since is known.
   const capSeries = useMemo<SeriesPoint[]>(() => {
     const usdcOf = (virtualUsdc: bigint, virtualTokens: bigint) => Number(marketCap({ virtualUsdc, virtualTokens, tokensSold: 0n })) / 1e6
@@ -45,10 +45,6 @@ export function LaunchDetail({ token, onBack }: LaunchDetailProps) {
     return () => window.clearInterval(timer)
   }, [])
 
-  const refresh = useCallback(async () => {
-    await refetch()
-  }, [refetch])
-
   if (isLoading) {
     return (
       <div className="pools-page">
@@ -57,11 +53,11 @@ export function LaunchDetail({ token, onBack }: LaunchDetailProps) {
     )
   }
 
-  if (unknown || !launch || !launchToken) {
+  if (!isConfigured || (error && !launch) || unknown || !launch || !launchToken) {
     return (
       <div className="pools-page">
         <div className="empty-state">
-          <p>That token is not on the launchpad.</p>
+          <p role={error ? 'alert' : undefined}>{!isConfigured ? 'The mainnet launchpad is not configured in this site yet.' : error ? 'This token could not be read from mainnet. The page cannot determine whether it is on the launchpad.' : 'That token is not on this launchpad.'}</p>
           <GhostButton onClick={onBack}>All launches</GhostButton>
         </div>
       </div>
@@ -81,6 +77,9 @@ export function LaunchDetail({ token, onBack }: LaunchDetailProps) {
           <p className="mt-1 text-sm text-g500">{launch.name} · {shortAddress(launch.token)}</p>
         </div>
       </div>
+
+      {error && <p className="read-error" role="alert">The latest curve read failed. Showing the last successful values.</p>}
+      {metadataError && <p className="mb-6 text-sm text-g500">The token name could not be read. Check its contract address before referring to it.</p>}
 
       {about && (about.description || links.length > 0) && (
         <section className="launch-about" aria-label="From the creator">
@@ -110,7 +109,7 @@ export function LaunchDetail({ token, onBack }: LaunchDetailProps) {
             loading={tradesLoading}
             partial={!historyComplete}
             loadingText="Reading the trades…"
-            emptyText="No trades yet — the first buy starts the chart."
+            emptyText="No trades yet. The first buy starts the chart."
             partialText="No recent trades. Older history could not be loaded."
           />
         </div>
@@ -127,10 +126,11 @@ export function LaunchDetail({ token, onBack }: LaunchDetailProps) {
           <div><dt>Graduates at</dt><dd>{GRADUATES_AT_USD}</dd></div>
           <div>
             <dt>Creator</dt>
-            <dd>
+            <dd className="inline-flex items-center gap-2">
               <a className="inline-flex items-center gap-1 underline" href={addressExplorerUrl(launch.creator)} target="_blank" rel="noreferrer">
                 {shortAddress(launch.creator)} <ExternalLinkIcon className="h-4 w-4" />
               </a>
+              {agentLabel(launch.creator) && <span className="actor-label">Known agent</span>}
             </dd>
           </div>
           <div>
@@ -142,21 +142,11 @@ export function LaunchDetail({ token, onBack }: LaunchDetailProps) {
             </dd>
           </div>
         </dl>
-        <div className="launch-trade">
-          <LaunchTradeSheet
-            launch={launch}
-            token={launchToken}
-            usdc={usdc}
-            tokenBalance={tokenBalance}
-            usdcBalance={usdcBalance}
-            usdcAllowance={usdcAllowance}
-            onConfirmed={refresh}
-          />
-        </div>
       </div>
 
       <section className="ledger" aria-label="Trades">
         <div className="section-heading-row"><h2>Trades</h2><span>{trades.length}</span></div>
+        {tradesError && <p className="read-error" role="alert">Trades could not be refreshed. {trades.length ? 'Showing the last successful read.' : 'The page cannot confirm an empty history.'}</p>}
         {trades.length === 0 ? (
           <p className="price-history-empty">
             {historyComplete ? 'No trades yet.' : (
@@ -171,7 +161,10 @@ export function LaunchDetail({ token, onBack }: LaunchDetailProps) {
                   <span className="block truncate">
                     <span className={trade.isBuy ? 'trade-buy' : 'trade-sell'}>{trade.isBuy ? 'Buy' : 'Sell'}</span> {formatAmount(trade.tokenAmount, 18)} {launch.symbol} · {formatAmount(trade.isBuy ? trade.usdcAmount : trade.usdcAmount - trade.fee, 6)} USDC
                   </span>
-                  <span className="block text-xs text-g500">{shortAddress(trade.trader)} · {relativeTime(trade.time * 1000, now)}</span>
+                  <span className="block text-xs text-g500">
+                    {shortAddress(trade.trader)} · {relativeTime(trade.time * 1000, now)}
+                    {agentLabel(trade.trader) && <span className="actor-label ml-2 align-middle">Known agent</span>}
+                  </span>
                 </span>
                 <a className="inline-flex shrink-0 items-center gap-1 font-semibold underline" href={txExplorerUrl(trade.txHash)} target="_blank" rel="noreferrer">
                   View <ExternalLinkIcon className="h-4 w-4" />
@@ -180,6 +173,7 @@ export function LaunchDetail({ token, onBack }: LaunchDetailProps) {
             ))}
           </ol>
         )}
+        {trades.length > 0 && <p className="mt-3 text-xs text-g500">Trade amounts exclude relay fees.</p>}
         {trades.length > 0 && !historyComplete && (
           <p className="mt-3 text-xs text-g500">
             Recent trades only. <a className="underline" href={addressExplorerUrl(token)} target="_blank" rel="noreferrer">The explorer</a> has the full history.

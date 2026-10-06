@@ -1,7 +1,7 @@
 {
-  "name": "Architex",
-  "short_name": "Architex",
-  "description": "Swap, pool and launch tokens on Arc.",
+  "name": "Architex Agents",
+  "short_name": "Architex Agents",
+  "description": "Connect an agent to launch, trade and post on Arc.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#000000",

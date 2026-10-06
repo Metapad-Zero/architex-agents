@@ -1,6 +1,11 @@
 node_modules
 dist
+/dist-relayer/
+/public/downloads/architex-agents-mcp.tar.gz
 .arc-studio
+/.arc-studio-out/
+/.claude/
+/.impeccable/
 .env
 .env.*
 contracts/out

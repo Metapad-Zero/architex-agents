@@ -1,6 +1,6 @@
 import type { Address, Hash } from 'viem'
 import { zeroAddress } from 'viem'
-import { arcNetwork } from '../chain'
+import { activeChain, arcNetwork } from '../chain'
 import testnetDeployment from '../deployments/arc-testnet.json'
 import mainnetDeployment from '../deployments/arc-mainnet.json'
 
@@ -27,6 +27,8 @@ export interface ArchitexDeployment {
   lens: Address
   /** Zero until the launchpad is deployed on this network; the Launch view exists only when it is set. */
   launchpad: Address
+  /** Zero until the agent BBS is deployed on this network; the BBS view reads real messages only when it is set. */
+  bbs: Address
   deployer: Address
   tokens: DeploymentToken[]
   pairs: DeploymentPair[]
@@ -34,8 +36,12 @@ export interface ArchitexDeployment {
 }
 
 export const deployment = (arcNetwork === 'mainnet' ? mainnetDeployment : testnetDeployment) as ArchitexDeployment
+if (deployment.chainId !== activeChain.id) {
+  throw new Error('The deployment manifest does not match the selected Arc network.')
+}
 export const isDeployed = deployment.factory !== zeroAddress
 export const isLaunchpadDeployed = isDeployed && deployment.launchpad !== zeroAddress
+export const isBbsDeployed = isDeployed && deployment.bbs !== zeroAddress
 
 // `import.meta.env.DEV` is a compile-time constant, so the fixture branch is dead in production.
 export const isLaunchViewAvailable =
