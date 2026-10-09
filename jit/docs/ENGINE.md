@@ -194,8 +194,10 @@ conversion from six-decimal pool quantities.
 The independent stateless checks in
 [`arc-fork-verification.json`](../artifacts/arc-fork-verification.json) include
 the opcode probe and an actual ERC20 USDC transfer returning true after a
-synthetic native-balance override. Full engine tests, lifecycle measurements
-and their limitations are also recorded there. The completed verification is:
+synthetic native-balance override, plus the complete JIT swap and fee-claim
+lifecycle through the actual Arc mainnet RPC. Full engine tests, lifecycle
+measurements and their limitations are also recorded there. The completed
+verification is:
 
 | Check | Result |
 | --- | --- |
@@ -203,6 +205,7 @@ and their limitations are also recorded there. The completed verification is:
 | Conservation, fee backing and resting lifecycle invariants | Five properties passed; 128 runs and 8,192 calls per property, zero reverts |
 | Ordinary Forge Arc fork | Five passed; native positive test explicitly skipped |
 | Checksum-verified Arc Forge native fork | Six passed, zero failed or skipped |
+| Direct Arc mainnet RPC `eth_call` | Both swap directions and fee claims passed; fills and execution gas match the native fork |
 | Separate read-only source review | No concrete remaining finding; fixes and trusted setup limit recorded |
 | Existing root contracts, JavaScript and MCP tests | 158, 211 and 10 passed respectively |
 | Existing mainnet fork with configured factory/router/lens | Five passed, zero skipped |
@@ -216,6 +219,15 @@ by exactly the credited fees while preserving available inventory. These are
 synthetic fixture fills, not market observations. The two harness execution
 measurements were 705,465 and 566,177 gas; the full test, including deployments
 and hook-address mining, consumed 7,308,697 gas.
+
+The independent direct RPC call at the same pinned block reproduced these fills,
+gas measurements, cash/claim balances and fee payouts exactly. It changed only
+the simulation harness's code, nonce and native balance, plus the synthetic
+caller's balance through state overrides. Real USDC and PoolManager code were
+left intact. Simulated contract addresses in the evidence are not production
+deployments. The 41,593-byte harness exceeds the production runtime size limit
+and is used only through a code override; the three production contracts remain
+within that limit. All simulated state changes were discarded by `eth_call`.
 
 Passing any of these categories does not satisfy mainnet deployment, funded
 acceptance or the owner's Firepan release gate. Source review is separate from
