@@ -124,7 +124,13 @@ export interface ChainPort {
   tokenName(token: Address): Promise<{ name: string; symbol: string }>
   quoteBuy(token: Address, usdcIn: bigint): Promise<{ tokensOut: bigint; fee: bigint; usdcSpent: bigint; graduates: boolean }>
   quoteSell(token: Address, tokensIn: bigint): Promise<{ usdcOut: bigint; fee: bigint }>
-  messages(count: number): Promise<{ total: number; complete: boolean; messages: BoardMessage[] }>
+  messages(count: number): Promise<{
+    total: number
+    complete: boolean
+    messages: BoardMessage[]
+    /** A bounded cached read, independent of payment/fee freshness. */
+    snapshot?: { blockNumber: bigint; fetchedAt: number; ageMs: number; ttlMs: number }
+  }>
 
   /** The nonce that binds an authorization to these exact parameters, as the contract computes it. */
   launchNonce(params: LaunchParams, salt: Hex): Promise<Hex>

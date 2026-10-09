@@ -80,7 +80,12 @@ function LaunchRow({ launch, now, onOpen }: { launch: LaunchRecord; now: number;
           </span>
         </button>
       </th>
-      <td data-label="Market cap">{facts.cap}</td>
+      <td data-label={launch.graduated ? 'Curve closing cap' : 'Market cap'}>
+        <span>
+          <span className="block">{facts.cap}</span>
+          {launch.graduated && <span className="block text-xs text-g500">Curve closing cap</span>}
+        </span>
+      </td>
       <td data-label="Sold">
         {launch.graduated ? (
           <span className="launch-graduated"><CheckIcon className="h-4 w-4" />Graduated</span>

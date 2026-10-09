@@ -6,10 +6,10 @@ import type { FileToPin, PinnedFile, Pinner } from './pinner.js'
 /**
  * Local stand-in for the pinning service and its gateway, for `vite dev` only.
  *
- * `/api/metadata` behaves exactly as it does in production (the same service code, the same checks),
- * but files are kept in memory, and `/ipfs/<cid>` serves them back, so the whole path from the form to
- * a verified image on the token page can be exercised without a key or a network. Nothing here is
- * bundled into the app or deployed.
+ * Local `/api/metadata` retains the bounded upload service with files kept in memory, and
+ * `/ipfs/<cid>` serves them back for verified-image development without a key or network.
+ * Production uploads are retired: its POST returns 410 and agents provide prepared IPFS URIs.
+ * Nothing here is bundled into the app or deployed.
  */
 function memoryPinner(files: Map<string, { bytes: Uint8Array; type: string }>): Pinner {
   return {

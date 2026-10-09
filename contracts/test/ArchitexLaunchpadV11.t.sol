@@ -5,9 +5,11 @@ import {Test} from "forge-std/Test.sol";
 import {AuthorizationFixture, MockUSDCAuth} from "./helpers/AuthorizationFixture.sol";
 import {ArchitexLaunchpad} from "../launchpad/ArchitexLaunchpad.sol";
 import {IArchitexLaunchpad} from "../interfaces/IArchitexLaunchpad.sol";
+import {IArchitexPair} from "../interfaces/IArchitexPair.sol";
 import {IERC3009} from "../interfaces/IERC3009.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @notice Historical curve vectors now executed through real signed-payment entrypoints.
 contract ArchitexLaunchpadV11Test is AuthorizationFixture {
@@ -67,12 +69,66 @@ contract ArchitexLaunchpadV11Test is AuthorizationFixture {
         vm.expectRevert(IArchitexLaunchpad.ZeroAmount.selector);
         pad.quoteBuy(token, 1);
     }
-    function test_donatedUsdcCannotAlterGraduationAmount() public {
+    function test_launchpadDonationCannotAlterGraduationAmount() public {
         (address token,) = _launch(0, false);
         usdc.mint(address(pad), 100e6);
         _buy(token, 30_000e6, ALICE_KEY, false);
         assertEq(usdc.balanceOf(pad.curves(token).pair), 24_999_999_968);
         assertEq(usdc.balanceOf(address(pad)) - pad.pendingFees(), 100e6);
+        _assertAccounting();
+    }
+    function test_unsyncedPairDonationPreservesGraduationSeedAndReserves() public {
+        _assertPairDonationGraduation(false);
+    }
+    function test_syncedPairDonationPreservesGraduationSeedAndReserves() public {
+        _assertPairDonationGraduation(true);
+    }
+    function _assertPairDonationGraduation(bool synced) internal {
+        (address token,) = _launch(0, false);
+        IArchitexPair pair = IArchitexPair(pad.curves(token).pair);
+        uint256 donation = 100e6;
+        vm.prank(mallory);
+        usdc.transfer(address(pair), donation);
+        if (synced) pair.sync();
+
+        bool tokenIs0 = pair.token0() == token;
+        (uint112 reserve0, uint112 reserve1,) = pair.getReserves();
+        assertEq(uint256(tokenIs0 ? reserve0 : reserve1), 0);
+        assertEq(uint256(tokenIs0 ? reserve1 : reserve0), synced ? donation : 0);
+        assertEq(pair.totalSupply(), 0);
+        assertEq(IERC20(token).balanceOf(address(pair)), 0);
+        assertEq(usdc.balanceOf(address(pair)), donation);
+
+        uint256 expectedSeed = 24_999_999_968;
+        uint256 tokensSeeded = pad.POOL_SUPPLY();
+        (uint256 quotedTokens, uint256 fee, uint256 quotedSpent, bool graduates) = pad.quoteBuy(token, 30_000e6);
+        assertTrue(graduates);
+        assertEq(quotedSpent - fee, expectedSeed);
+        // Synced donations are already reserves; unsynced donations enter the first mint's delta.
+        uint256 expectedLpSupply = Math.sqrt(tokensSeeded * (expectedSeed + (synced ? 0 : donation)));
+        vm.expectEmit(true, true, false, true, address(pad));
+        emit IArchitexLaunchpad.Graduated(
+            token, address(pair), expectedSeed, tokensSeeded, expectedLpSupply - pair.MINIMUM_LIQUIDITY()
+        );
+        (uint256 bought, uint256 spent) = _buy(token, 30_000e6, ALICE_KEY, false);
+
+        IArchitexLaunchpad.Curve memory c = pad.curves(token);
+        assertTrue(c.graduated);
+        assertEq(uint256(c.virtualUsdc) - pad.VIRTUAL_USDC_0(), expectedSeed);
+        assertEq(bought, quotedTokens);
+        assertEq(bought, pad.CURVE_SUPPLY());
+        assertEq(spent, quotedSpent);
+        assertEq(usdc.balanceOf(address(pair)) - donation, expectedSeed);
+        assertEq(IERC20(token).balanceOf(address(pair)), tokensSeeded);
+        (reserve0, reserve1,) = pair.getReserves();
+        assertEq(uint256(tokenIs0 ? reserve0 : reserve1), tokensSeeded);
+        assertEq(uint256(tokenIs0 ? reserve1 : reserve0), expectedSeed + donation);
+        assertEq(pair.totalSupply(), expectedLpSupply);
+        assertEq(pair.balanceOf(0x000000000000000000000000000000000000dEaD), expectedLpSupply);
+        assertEq(pad.liveCurveReserves(), 0);
+        assertEq(pad.pendingFees(), fee);
+        assertEq(usdc.balanceOf(address(pad)), spent - expectedSeed);
+        assertEq(usdc.balanceOf(address(pad)), pad.accountedUsdc());
         _assertAccounting();
     }
     function testFuzz_roundTripNeverExtractsCurveValue(uint64 raw) public {

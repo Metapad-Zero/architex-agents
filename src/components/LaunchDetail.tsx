@@ -103,7 +103,7 @@ export function LaunchDetail({ token, onBack }: LaunchDetailProps) {
         <div className="launch-chart">
           <PriceHistory
             series={capSeries}
-            title="Market cap"
+            title={launch.graduated ? 'Curve market cap' : 'Market cap'}
             unit="USDC"
             formatValue={formatCap}
             loading={tradesLoading}
@@ -114,8 +114,8 @@ export function LaunchDetail({ token, onBack }: LaunchDetailProps) {
           />
         </div>
         <dl className="receipt-lines launch-facts">
-          <div><dt>Price</dt><dd>{facts.price}</dd></div>
-          <div><dt>Market cap</dt><dd>{facts.cap}</dd></div>
+          <div><dt>{launch.graduated ? 'Curve closing price' : 'Price'}</dt><dd>{facts.price}</dd></div>
+          <div><dt>{launch.graduated ? 'Curve closing cap' : 'Market cap'}</dt><dd>{facts.cap}</dd></div>
           <div>
             <dt>Sold</dt>
             <dd>
@@ -142,6 +142,7 @@ export function LaunchDetail({ token, onBack }: LaunchDetailProps) {
             </dd>
           </div>
         </dl>
+        {launch.graduated && <p className="text-sm text-g500">Price, cap and chart show the curve through its closing trade. For AMM trading, read the pair's current reserves and quotes.</p>}
       </div>
 
       <section className="ledger" aria-label="Trades">

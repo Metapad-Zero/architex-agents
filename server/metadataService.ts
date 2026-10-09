@@ -44,8 +44,8 @@ function decodeBase64(value: string): Uint8Array | undefined {
 
 export function createMetadataService(options: MetadataServiceOptions) {
   const now = options.now ?? Date.now
-  // Best effort only: each server instance counts for itself. The real bound on abuse is that an upload
-  // is worthless without a launch, and a launch costs the launch fee.
+  // This per-instance limit is only a local guard, not authentication or a bound on persistent storage
+  // costs: pinning does not require a paid launch. The production API disables uploads instead.
   const recent = new Map<string, number[]>()
 
   function allowed(client: string): boolean {

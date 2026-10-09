@@ -19,6 +19,8 @@ function deployment(value: Record<string, unknown> | undefined) {
 }
 
 export async function GET(request: Request): Promise<Response> {
+  // The one dedicated process owns board cache and scan admission across all serverless instances.
+  if (routeOf(request) === '/x402/bbs') return forwardToRelayer(request, process.env)
   const local = await gate(request)
   if (routeOf(request) !== '/x402' || !local.ok || !process.env.RELAYER_SERVICE_URL) return local
   const relay = await forwardToRelayer(request, process.env)

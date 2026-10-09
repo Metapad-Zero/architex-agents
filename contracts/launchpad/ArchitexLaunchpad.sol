@@ -26,7 +26,9 @@ import {LaunchToken} from "./LaunchToken.sol";
 /// Graduation: when the last curve token is sold, POOL_SUPPLY tokens + exactly
 /// `virtualUsdc - VIRTUAL_USDC_0` USDC (per that curve, never balanceOf) are deposited
 /// directly into the Architex pair and LP tokens are permanently locked at DEAD.
-/// The router is deliberately NOT used; direct pair.mint() is immune to sync-attack.
+/// The router is deliberately NOT used; direct pair.mint() accepts prior USDC donations,
+/// with or without sync(). Donations remain in pair reserves, so the opening price matches
+/// the curve only when the pair held no prior USDC.
 ///
 /// Arc trap: native USDC (18-dec) and ERC-20 USDC (6-dec) are the same balance on Arc.
 /// Curve obligations come from stored reserves. balanceOf is only used to verify a
@@ -139,12 +141,11 @@ contract ArchitexLaunchpad is IArchitexLaunchpad, AuthorizationGate {
     }
 
     /// @inheritdoc IArchitexLaunchpad
-    /// @notice Only callable by the current feeToSetter. Setting to address(0) is an
-    ///         IRREVERSIBLE RENOUNCE: the fee admin role is permanently abandoned and
-    ///         feeTo can never be changed again.
+    /// @notice Current admin only: transfer fee and relayer controls to a nonzero successor.
+    /// @dev Relayer rotation also governs trusted external payment recovery and refunds.
     function setFeeToSetter(address _feeToSetter) external {
         if (msg.sender != feeToSetter) revert Forbidden();
-        // address(0) is allowed here as an explicit irreversible renounce.
+        if (_feeToSetter == address(0)) revert ZeroAddress();
         feeToSetter = _feeToSetter;
         emit FeeToSetterUpdated(_feeToSetter);
     }

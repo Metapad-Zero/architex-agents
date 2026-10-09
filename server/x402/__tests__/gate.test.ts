@@ -6,6 +6,7 @@ import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import { decodePaymentSignatureHeader } from '@x402/core/http'
 import type { PaymentRequirements } from '@x402/core/types'
 import type { Money } from '../money'
+import type { BoardMessage } from '../port'
 import { GateError } from '../errors'
 import { createGate, type Gate } from '../gate'
 import { BOARD, CHAIN_ID, FEES, LAUNCHPAD, USDC, fakeChain } from './fakePort'
@@ -25,6 +26,7 @@ interface FixtureJson extends Record<string, unknown> {
   endpoints: { paid: boolean; path: string }[]
   launches: { token: Address }[]
   messages: { id: string; from: Address; text: string }[]
+  snapshot?: { blockNumber: string; fetchedAt: string; ageSeconds: number; ttlSeconds: number }
   charged: Money
   curveFee: Money
   paths: Record<string, unknown>
@@ -389,6 +391,101 @@ describe('reading', () => {
     const nowhere = '0x00000000000000000000000000000000000000ff'
     expect((await call(`/x402/launch/${nowhere}`)).status).toBe(404)
     expect((await post('/x402/buy', { token: nowhere, usdc: '1' })).status).toBe(404)
+  })
+})
+
+describe('public board reads', () => {
+  test('all direct, API and rewritten aliases preserve default20, count0 and capped count100', async () => {
+    const { call, chain } = setup()
+    const counts: number[] = []
+    const messages: BoardMessage[] = Array.from({ length: 100 }, (_, index) => ({ id: BigInt(99 - index), from: BOARD, time: 1_700_000_000n, text: `message ${99 - index}`, transaction: `0x${'12'.repeat(32)}` }))
+    chain.messages = (count) => { counts.push(count); return Promise.resolve({ total: 100, complete: true, messages: messages.slice(0, count) }) }
+    for (const [path, count] of [
+      ['/x402/bbs', 20],
+      ['/x402/bbs/?count=1&cacheBust=first', 1],
+      ['/api/x402/bbs?count=0', 0],
+      ['/api/x402/bbs/?count=100', 100],
+      ['/api/x402?path=bbs&count=999999&_=second', 100],
+      ['/api/x402?path=bbs%2F&count=1', 1],
+      ['/api/x402/?path=bbs/', 20],
+    ] as const) {
+      const response = await call(path)
+      expect(response.status).toBe(200)
+      const board = await response.json()
+      expect(board.count).toBe(count)
+      expect(board.total).toBe(100)
+      expect(board.completeHistory).toBe(true)
+      expect(response.headers.get('cache-control')).toBe('no-store')
+    }
+    expect(counts).toEqual([20, 1, 0, 100, 100, 1, 20])
+  })
+
+  test('invalid counts are rejected before any board scan', async () => {
+    const { call, chain } = setup()
+    let scans = 0
+    chain.messages = () => { scans++; return Promise.resolve({ total: 0, complete: true, messages: [] }) }
+    for (const count of ['', '-1', '1.5', '1e2', '0x10', 'NaN', '1000000', ' ']) {
+      const response = await call(`/api/x402?path=bbs&count=${encodeURIComponent(count)}`)
+      expect(response.status).toBe(400)
+      expect((await response.json()).error).toBe('invalid_field')
+      expect(response.headers.get('cache-control')).toBe('no-store')
+    }
+    expect(scans).toBe(0)
+  })
+
+  test('describes the captured snapshot and limits public caching to its remaining TTL', async () => {
+    const { call, chain } = setup()
+    const fetchedAt = 1_700_000_000_000
+    chain.readiness = () => Promise.reject(new Error('Board reads must not refresh paid readiness.'))
+    chain.fees = () => Promise.reject(new Error('Board reads must not read paid fees.'))
+    for (const [ageMs, ageSeconds, remaining] of [[0, 0, 15], [1234, 1, 13], [14_999, 14, 0], [15_000, 15, 0]]) {
+      chain.messages = () => Promise.resolve({
+        total: 123, complete: false,
+        messages: [{ id: 122n, from: BOARD, time: 1_700_000_000n, text: 'latest observed message', transaction: `0x${'12'.repeat(32)}` }],
+        snapshot: { blockNumber: 123_456n, fetchedAt, ageMs, ttlMs: 15_000 },
+      })
+      const response = await call('/x402/bbs?count=1')
+      expect(response.status).toBe(200)
+      expect(response.headers.get('cache-control')).toBe(`public, max-age=${remaining}, s-maxage=${remaining}`)
+      const board = await response.json()
+      expect(board.snapshot).toEqual({ blockNumber: '123456', fetchedAt: '2023-11-14T22:13:20.000Z', ageSeconds, ttlSeconds: 15 })
+      expect(board.total).toBe(123)
+      expect(board.completeHistory).toBe(false)
+      expect(board.messages).toEqual([{ id: '122', from: BOARD, time: '2023-11-14T22:13:20.000Z', text: 'latest observed message', transaction: `0x${'12'.repeat(32)}` }])
+    }
+  })
+
+  test('board quota refusals expose Retry-After while paid actions and readiness remain healthy', async () => {
+    const { call, paidPost, chain } = setup()
+    chain.messages = () => Promise.reject(new GateError(429, 'history_rate_limited', 'Board refreshes are limited.', { retryAfter: 17, retryable: true }))
+    const response = await call('/x402/bbs')
+    expect(response.status).toBe(429)
+    expect(response.headers.get('retry-after')).toBe('17')
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    expect(response.headers.get('payment-required')).toBeNull()
+    expect(await response.json()).toEqual({ ok: false, error: 'history_rate_limited', message: 'Board refreshes are limited.', retryAfter: 17, retryable: true })
+    const index = await call('/x402')
+    expect(index.status).toBe(200)
+    expect(index.headers.get('cache-control')).toBe('no-store')
+    const post = await paidPost('/x402/post', { text: 'paid actions have a separate lane' })
+    expect(post.status).toBe(200)
+    expect(post.headers.get('cache-control')).toBe('no-store')
+    expect(post.headers.has('payment-response')).toBe(true)
+    expect(chain.posts).toHaveLength(1)
+  })
+
+  test('board failures and legacy responses without snapshot metadata remain no-store', async () => {
+    const { call, chain } = setup()
+    const legacy = await call('/x402/bbs?count=0')
+    expect(legacy.status).toBe(200)
+    expect((await legacy.json()).snapshot).toBe(undefined)
+    expect(legacy.headers.get('cache-control')).toBe('no-store')
+    chain.messages = () => Promise.reject(new GateError(502, 'unreadable_history', 'History could not be read.'))
+    const failed = await call('/x402/bbs')
+    expect(failed.status).toBe(502)
+    expect((await failed.json()).error).toBe('unreadable_history')
+    expect(failed.headers.get('cache-control')).toBe('no-store')
+    expect(failed.headers.get('retry-after')).toBeNull()
   })
 })
 

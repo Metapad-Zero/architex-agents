@@ -4,10 +4,10 @@
  */
 export class GateError extends Error {
   constructor(
-    readonly status: 400 | 402 | 404 | 405 | 409 | 413 | 502 | 503,
+    readonly status: 400 | 402 | 404 | 405 | 409 | 413 | 429 | 502 | 503,
     readonly code: string,
     message: string,
-    readonly details: { transaction?: `0x${string}`; status?: string; retryable?: boolean } = {},
+    readonly details: { transaction?: `0x${string}`; status?: string; retryable?: boolean; retryAfter?: number } = {},
   ) {
     super(message)
   }

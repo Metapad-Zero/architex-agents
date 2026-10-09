@@ -29,10 +29,17 @@ export async function forwardToRelayer(request: Request, env: Env, send: typeof 
   let token: string
   try { origin = relayOrigin(env.RELAYER_SERVICE_URL); token = tokenOf(env) } catch { return answer(503, 'relayer_service_not_configured', 'The dedicated relayer service is not configured.') }
   const path = routeOf(request)
+  const target = new URL('/internal/gate', origin)
+  target.searchParams.set('path', path.replace(/^\/x402\/?/, ''))
+  // Preserve board count across direct/API/rewrite forms; unrelated query keys cannot split its cache.
+  if (request.method === 'GET' && path === '/x402/bbs') {
+    const count = new URL(request.url).searchParams.get('count')
+    if (count !== null) target.searchParams.set('count', count)
+  }
   const headers = new Headers({ authorization: `Bearer ${token}` })
   for (const name of ['content-type', 'payment-signature']) { const value = request.headers.get(name); if (value) headers.set(name, value) }
   try {
-    return await send(`${origin}/internal/gate?path=${encodeURIComponent(path.replace(/^\/x402\/?/, ''))}`, { method: request.method, headers, ...(request.method === 'POST' ? { body: await request.arrayBuffer() } : {}), signal: AbortSignal.timeout(48_000), redirect: 'error' })
+    return await send(target.href, { method: request.method, headers, ...(request.method === 'POST' ? { body: await request.arrayBuffer() } : {}), signal: AbortSignal.timeout(48_000), redirect: 'error' })
   } catch {
     return answer(502, 'relayer_transport_unknown', 'The relayer connection ended without a definitive result. Retry only the original PAYMENT-SIGNATURE or inspect its on-chain authorization; do not sign a new payment.')
   }

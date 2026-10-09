@@ -29,7 +29,7 @@ const CORS: Record<string, string> = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, POST, OPTIONS',
   'access-control-allow-headers': 'content-type, payment-signature',
-  'access-control-expose-headers': 'payment-required, payment-response',
+  'access-control-expose-headers': 'payment-required, payment-response, retry-after',
   'access-control-max-age': '86400',
 }
 
@@ -66,7 +66,7 @@ function json(status: number, body: unknown, headers: Record<string, string> = {
 }
 
 function refusal(error: GateError, explorer?: string): Response {
-  return json(error.status, { ok: false, error: error.code, message: error.message, ...error.details, ...(error.details.transaction && explorer ? { explorer: `${explorer}/tx/${error.details.transaction}` } : {}) })
+  return json(error.status, { ok: false, error: error.code, message: error.message, ...error.details, ...(error.details.transaction && explorer ? { explorer: `${explorer}/tx/${error.details.transaction}` } : {}) }, error.details.retryAfter === undefined ? {} : { 'retry-after': String(error.details.retryAfter) })
 }
 
 /** The public origin the request arrived on, so terms name the URL the caller actually used. */
@@ -627,10 +627,17 @@ async function free(port: ChainPort, request: Request, path: string): Promise<Re
 
   if (path === '/x402/bbs') {
     const board = await port.messages(countOf(url, 'count', 20, 100))
+    const remaining = board.snapshot ? Math.max(0, Math.floor((board.snapshot.ttlMs - board.snapshot.ageMs) / 1000)) : 0
     return json(200, {
       total: board.total,
       count: board.messages.length,
       completeHistory: board.complete,
+      ...(board.snapshot ? { snapshot: {
+        blockNumber: board.snapshot.blockNumber.toString(),
+        fetchedAt: new Date(board.snapshot.fetchedAt).toISOString(),
+        ageSeconds: Math.floor(board.snapshot.ageMs / 1000),
+        ttlSeconds: board.snapshot.ttlMs / 1000,
+      } } : {}),
       messages: board.messages.map((message) => ({
         id: message.id.toString(),
         from: message.from,
@@ -638,7 +645,7 @@ async function free(port: ChainPort, request: Request, path: string): Promise<Re
         text: message.text,
         transaction: message.transaction,
       })),
-    })
+    }, board.snapshot ? { 'cache-control': `public, max-age=${remaining}, s-maxage=${remaining}` } : {})
   }
 
   return undefined

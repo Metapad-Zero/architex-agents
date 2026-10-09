@@ -5,6 +5,7 @@ import { generatePrivateKey } from 'viem/accounts'
 import testnetDeployment from '../../../src/deployments/arc-testnet.json' with { type: 'json' }
 import { refreshPending, SubmissionLane, usdcDomainSeparator, verifyExternalSettlement, viemPort, type PendingTransaction } from '../viemPort'
 import { boardGateAbi, launchpadGateAbi, usdcAuthorizationAbi } from '../abi'
+import { GateError } from '../errors'
 import type { Signed, TransactionStatus } from '../port'
 import { BOARD, LAUNCHPAD, USDC } from './fakePort'
 
@@ -22,9 +23,24 @@ function fixture() {
 const rpcServers: Server[] = []
 afterEach(async () => { await Promise.all(rpcServers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve())))) })
 
+function boardLog(id: bigint, blockNumber: bigint, logIndex = Number(id)) {
+  return {
+    address: getAddress(testnetDeployment.bbs),
+    topics: encodeEventTopics({ abi: boardGateAbi, eventName: 'Message', args: { from: BOARD, id } }),
+    data: encodeAbiParameters([{ type: 'uint256' }, { type: 'string' }], [1_700_000_000n + id, `message ${id}`]),
+    logIndex: toHex(logIndex), transactionHash: hash, transactionIndex: '0x0', blockHash: hash, blockNumber: toHex(blockNumber), removed: false,
+  }
+}
+
 /** Controlled loopback RPC exercises real viem transport, ABI decoding and deployed-readiness checks. */
 async function readinessRpc() {
-  const state = { domain: usdcDomainSeparator(testnetDeployment.chainId), pendingNonce: 3, minedNonce: 3, consumed: false, methods: [] as string[] }
+  const state = {
+    domain: usdcDomainSeparator(testnetDeployment.chainId), pendingNonce: 3, minedNonce: 3, consumed: false, methods: [] as string[],
+    head: 100n, total: 0n, messages: [] as ReturnType<typeof boardLog>[],
+    countsAtBlock: new Map<bigint, bigint>(), countBlocks: [] as unknown[], logQueries: [] as { fromBlock: bigint; toBlock: bigint }[],
+    failBoardReads: false, onBlockNumber: undefined as (() => void) | undefined,
+    beforeResult: undefined as ((method: string, params: unknown[]) => Promise<void>) | undefined,
+  }
   const bbs = getAddress(testnetDeployment.bbs)
   const originalLog = {
     address: bbs, topics: encodeEventTopics({ abi: boardGateAbi, eventName: 'ExternalSettlementRefunded', args: { from: signed.auth.from, nonce: signed.auth.nonce, settlementTransaction: hash } }),
@@ -45,12 +61,23 @@ async function readinessRpc() {
     if (method === 'eth_getCode') return '0x60006000'
     if (method === 'eth_getBalance') return '0x1'
     if (method === 'eth_getTransactionCount') return toHex(params[1] === 'pending' ? state.pendingNonce : state.minedNonce)
-    if (method === 'eth_blockNumber') return '0x64'
+    if (method === 'eth_blockNumber') {
+      const head = state.head
+      state.onBlockNumber?.()
+      return toHex(head)
+    }
     if (method === 'eth_getTransactionByHash') return originalTransaction
     if (method === 'eth_getTransactionReceipt') return originalReceipt
     if (method === 'eth_getLogs') {
       const query = params[0]
-      return record(query) && Array.isArray(query.topics) && query.topics[0] === originalLog.topics[0] ? [originalLog] : []
+      if (!record(query) || !Array.isArray(query.topics)) throw new Error('Invalid fixture log query.')
+      if (query.topics[0] === originalLog.topics[0]) return [originalLog]
+      if (query.topics[0] !== boardLog(0n, 0n).topics[0]) return []
+      if (typeof query.fromBlock !== 'string' || typeof query.toBlock !== 'string') throw new Error('Unexpected fixture log query.')
+      const fromBlock = BigInt(query.fromBlock)
+      const toBlock = BigInt(query.toBlock)
+      state.logQueries.push({ fromBlock, toBlock })
+      return state.messages.filter((log) => BigInt(log.blockNumber) >= fromBlock && BigInt(log.blockNumber) <= toBlock)
     }
     if (method === 'eth_call') {
       const call = params[0]
@@ -67,6 +94,18 @@ async function readinessRpc() {
         case 'launchNonce': case 'postNonce': return encodeAbiParameters([{ type: 'bytes32' }], [`0x4152435458424e44${'00'.repeat(24)}`])
         case 'isRelayer': return encodeAbiParameters([{ type: 'bool' }], [true])
         case 'paymentConsumed': return encodeAbiParameters([{ type: 'bool' }], [state.consumed])
+        case 'messageCount': {
+          state.countBlocks.push(params[1])
+          if (state.failBoardReads) throw new Error('Fixture board history unavailable.')
+          const total = typeof params[1] === 'string' && params[1].startsWith('0x') ? state.countsAtBlock.get(BigInt(params[1])) ?? state.total : state.total
+          return encodeAbiParameters([{ type: 'uint256' }], [total])
+        }
+        case 'launchFee': return encodeAbiParameters([{ type: 'uint256' }], [250_000n])
+        case 'launchRelayFee': return encodeAbiParameters([{ type: 'uint256' }], [150_000n])
+        case 'tradeRelayFee': return encodeAbiParameters([{ type: 'uint256' }], [10_000n])
+        case 'FEE_BPS': return encodeAbiParameters([{ type: 'uint256' }], [12n])
+        case 'postFee': return encodeAbiParameters([{ type: 'uint256' }], [10_000n])
+        case 'authorizationState': return encodeAbiParameters([{ type: 'bool' }], [false])
         default: throw new Error('Unexpected fixture contract method.')
       }
     }
@@ -76,12 +115,17 @@ async function readinessRpc() {
     const chunks: Buffer[] = []
     request.on('data', (chunk: Buffer) => { chunks.push(chunk) })
     request.on('end', () => {
-      try {
+      void (async () => {
         const body: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
         if (!record(body) || typeof body.method !== 'string' || (body.params !== undefined && !Array.isArray(body.params))) throw new Error('Invalid fixture JSON RPC.')
+        const params = Array.isArray(body.params) ? body.params as unknown[] : []
+        await state.beforeResult?.(body.method, params)
         response.setHeader('content-type', 'application/json')
-        response.end(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: result(body.method, Array.isArray(body.params) ? body.params as unknown[] : []) }))
-      } catch { response.statusCode = 500; response.end('Unexpected fixture request.') }
+        try { response.end(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: result(body.method, params) })) } catch (error) {
+          if (!(error instanceof Error) || error.message !== 'Fixture board history unavailable.') throw error
+          response.end(JSON.stringify({ jsonrpc: '2.0', id: body.id, error: { code: -32602, message: error.message } }))
+        }
+      })().catch(() => { response.statusCode = 500; response.end('Unexpected fixture request.') })
     })
   })
   rpcServers.push(server)
@@ -121,6 +165,189 @@ describe('USDC domain readiness', () => {
     expect((await port.recover({ action: 'refund', payTo: rpc.bbs }, signed))?.transaction).toBe(hash)
     rpc.state.pendingNonce = rpc.state.minedNonce
     expect((await port.readiness()).relay.ready).toBe(true)
+    expect(rpc.state.methods.some((method) => method.includes('send') || method.includes('sign'))).toBe(false)
+  })
+})
+
+describe('bounded board snapshots', () => {
+  test('coalesces count0, count1 and capped reads into one max100 snapshot until the exact TTL boundary', async () => {
+    const rpc = await readinessRpc()
+    rpc.state.head = 50_000n
+    rpc.state.total = 150n
+    rpc.state.messages = Array.from({ length: 150 }, (_, id) => boardLog(BigInt(id), rpc.state.head))
+    let clock = 1_700_000_000_000
+    const port = viemPort(rpc.env, { now: () => clock })
+    let entered!: () => void
+    let release!: () => void
+    const scanning = new Promise<void>((resolve) => { entered = resolve })
+    const hold = new Promise<void>((resolve) => { release = resolve })
+    rpc.state.beforeResult = async (method) => { if (method === 'eth_getLogs') { entered(); await hold } }
+    const originalNow = Date.now
+    Date.now = () => clock
+    try {
+      const pending = [0, 1, 100, 1000].map((count) => port.messages(count))
+      await scanning
+      expect(rpc.state.countBlocks).toEqual([toHex(50_000n)])
+      release()
+      const [empty, one, hundred, capped] = await Promise.all(pending)
+      rpc.state.beforeResult = undefined
+      expect(empty.messages).toHaveLength(0)
+      expect(one.messages.map((message) => message.id)).toEqual([149n])
+      expect(hundred.messages.map((message) => message.id)).toEqual(Array.from({ length: 100 }, (_, index) => BigInt(149 - index)))
+      expect(capped).toEqual(hundred)
+      expect(hundred.total).toBe(150)
+      expect(hundred.complete).toBe(true)
+      expect(hundred.snapshot).toEqual({ blockNumber: 50_000n, fetchedAt: clock, ageMs: 0, ttlMs: 15_000 })
+      expect(rpc.state.logQueries).toHaveLength(1)
+      const reads = rpc.state.methods.length
+
+      // Expire chain verification independently while the board snapshot remains fresh.
+      clock += 14_999
+      const fresh = await port.messages(1)
+      expect(fresh.snapshot?.ageMs).toBe(14_999)
+      expect(fresh.messages[0].id).toBe(149n)
+      expect(rpc.state.methods).toHaveLength(reads)
+
+      clock++
+      rpc.state.head++
+      rpc.state.total++
+      rpc.state.messages.push(boardLog(150n, rpc.state.head))
+      const renewed = await port.messages(100)
+      expect(renewed.messages[0].id).toBe(150n)
+      expect(renewed.total).toBe(151)
+      expect(renewed.snapshot).toEqual({ blockNumber: 50_001n, fetchedAt: clock, ageMs: 0, ttlMs: 15_000 })
+      expect(rpc.state.countBlocks).toEqual([toHex(50_000n), toHex(50_001n)])
+      expect(rpc.state.logQueries).toHaveLength(2)
+    } finally {
+      release()
+      Date.now = originalNow
+    }
+  })
+
+  test('anchors the total and every event window to the captured block while the chain advances', async () => {
+    const rpc = await readinessRpc()
+    rpc.state.head = 50_000n
+    rpc.state.total = 1n
+    rpc.state.countsAtBlock.set(50_000n, 1n)
+    rpc.state.messages = [boardLog(0n, 50_000n), boardLog(1n, 50_001n)]
+    rpc.state.onBlockNumber = () => { rpc.state.head = 50_001n; rpc.state.total = 2n }
+    const board = await viemPort(rpc.env, { now: () => 123_000 }).messages(100)
+    expect(board.total).toBe(1)
+    expect(board.messages.map((message) => message.id)).toEqual([0n])
+    expect(board.snapshot?.blockNumber).toBe(50_000n)
+    expect(rpc.state.countBlocks).toEqual([toHex(50_000n)])
+    expect(rpc.state.logQueries).toEqual([{ fromBlock: 48_100n, toBlock: 50_000n }])
+  })
+
+  test('an empty board captures its total without scanning logs, including a count0-first request', async () => {
+    const rpc = await readinessRpc()
+    rpc.state.head = 100_000n
+    const port = viemPort(rpc.env, { now: () => 10_000 })
+    const board = await port.messages(0)
+    expect(board.total).toBe(0)
+    expect(board.complete).toBe(true)
+    expect(board.messages).toEqual([])
+    expect(board.snapshot).toEqual({ blockNumber: 100_000n, fetchedAt: 10_000, ageMs: 0, ttlMs: 15_000 })
+    expect(rpc.state.countBlocks).toEqual([toHex(100_000n)])
+    expect(rpc.state.logQueries).toHaveLength(0)
+    const reads = rpc.state.methods.length
+    expect((await port.messages(100)).messages).toEqual([])
+    expect(rpc.state.methods).toHaveLength(reads)
+  })
+
+  test('keeps the 20-window limit and incomplete flag even when the requested page is already full', async () => {
+    const rpc = await readinessRpc()
+    rpc.state.head = 100_000n
+    rpc.state.total = 200n
+    rpc.state.messages = Array.from({ length: 100 }, (_, index) => boardLog(BigInt(100 + index), rpc.state.head))
+    const port = viemPort(rpc.env, { now: () => 10_000 })
+    const one = await port.messages(1)
+    expect(one.total).toBe(200)
+    expect(one.messages.map((message) => message.id)).toEqual([199n])
+    expect(one.complete).toBe(false)
+    expect(rpc.state.logQueries).toHaveLength(20)
+    for (let index = 0; index < rpc.state.logQueries.length; index++) {
+      const toBlock = 100_000n - BigInt(index) * 1_901n
+      expect(rpc.state.logQueries[index]).toEqual({ fromBlock: toBlock - 1_900n, toBlock })
+    }
+    expect((await port.messages(100)).messages).toHaveLength(100)
+    expect(rpc.state.logQueries).toHaveLength(20)
+  })
+
+  test('duplicate or out-of-range IDs are refused instead of falsely proving complete history', async () => {
+    for (const ids of [[1n, 1n], [2n]]) {
+      const rpc = await readinessRpc()
+      rpc.state.head = 100_000n
+      rpc.state.total = 2n
+      rpc.state.messages = ids.map((id, index) => boardLog(id, rpc.state.head, index))
+      try { await viemPort(rpc.env, { now: () => 10_000 }).messages(100); throw new Error('Expected inconsistent board history refusal.') } catch (error) {
+        if (!(error instanceof GateError)) throw error
+        expect(error.status).toBe(502)
+        expect(error.code).toBe('unreadable_history')
+      }
+      expect(rpc.state.logQueries).toHaveLength(1)
+    }
+  })
+
+  test('reaching block0 with missing immutable IDs is refused and never cached as complete history', async () => {
+    const rpc = await readinessRpc()
+    rpc.state.total = 2n
+    rpc.state.messages = [boardLog(1n, rpc.state.head)]
+    const port = viemPort(rpc.env, { now: () => 10_000 })
+    try { await port.messages(1); throw new Error('Expected missing board history refusal.') } catch (error) {
+      if (!(error instanceof GateError)) throw error
+      expect(error.status).toBe(502)
+      expect(error.code).toBe('unreadable_history')
+    }
+    rpc.state.messages.unshift(boardLog(0n, rpc.state.head))
+    const complete = await port.messages(100)
+    expect(complete.total).toBe(2)
+    expect(complete.complete).toBe(true)
+    expect(complete.messages.map((message) => message.id)).toEqual([1n, 0n])
+    expect(rpc.state.countBlocks).toHaveLength(2)
+    expect(rpc.state.logQueries).toEqual([{ fromBlock: 0n, toBlock: 100n }, { fromBlock: 0n, toBlock: 100n }])
+  })
+
+  test('charges failed refreshes to the same fixed budget, refuses without RPC and resets after 60 seconds', async () => {
+    const rpc = await readinessRpc()
+    rpc.state.head = 50_000n
+    rpc.state.total = 1n
+    rpc.state.messages = [boardLog(0n, rpc.state.head)]
+    let clock = 0
+    const port = viemPort(rpc.env, { now: () => clock })
+    rpc.state.failBoardReads = true
+    for (clock of [0, 1000]) {
+      const failures = await Promise.allSettled([0, 1, 100].map((count) => port.messages(count)))
+      for (const failure of failures) {
+        expect(failure.status).toBe('rejected')
+        if (failure.status === 'rejected') expect(String(failure.reason)).toContain('Fixture board history unavailable.')
+      }
+    }
+    clock = 2000
+    rpc.state.failBoardReads = false
+    expect((await port.messages(1)).messages).toHaveLength(1)
+    clock = 17_000
+    rpc.state.failBoardReads = true
+    await expect(port.messages(100)).rejects.toThrow('Fixture board history unavailable.')
+    expect(rpc.state.countBlocks).toHaveLength(4)
+    rpc.state.failBoardReads = false
+    for (const [at, retryAfter] of [[17_001, 43], [59_999, 1]]) {
+      clock = at
+      const reads = rpc.state.methods.length
+      try { await port.messages(0); throw new Error('Expected a board refresh refusal.') } catch (error) {
+        if (!(error instanceof GateError)) throw error
+        expect(error.status).toBe(429)
+        expect(error.code).toBe('history_rate_limited')
+        expect(error.details.retryAfter).toBe(retryAfter)
+      }
+      expect(rpc.state.methods).toHaveLength(reads)
+    }
+    expect((await port.readiness()).relay.ready).toBe(true)
+    expect((await port.fees()).postFee).toBe(10_000n)
+    expect(await port.postNonce('independent paid terms', zeroHash)).toBe(`0x4152435458424e44${'00'.repeat(24)}`)
+    clock = 60_000
+    expect((await port.messages(100)).snapshot?.ageMs).toBe(0)
+    expect(rpc.state.countBlocks).toHaveLength(5)
     expect(rpc.state.methods.some((method) => method.includes('send') || method.includes('sign'))).toBe(false)
   })
 })

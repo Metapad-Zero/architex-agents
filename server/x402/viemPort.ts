@@ -17,6 +17,9 @@ import type { ChainPort, Curve, Fees, Readiness, RecoveredAction, RecoveryReques
 const USDC: Address = '0x3600000000000000000000000000000000000000'
 const CONFIRM_WITHIN_MS = 40_000
 const BOARD_WINDOWS = 20
+const BOARD_SNAPSHOT_TTL_MS = 15_000
+const BOARD_SCAN_WINDOW_MS = 60_000
+const BOARD_SCAN_LIMIT = 4
 const READINESS_FRESH_MS = 10_000
 
 /** hashDomain requires the domain fields explicitly in the installed viem API. */
@@ -139,7 +142,8 @@ export function verifyExternalSettlement(
   return transaction.hash
 }
 
-export function viemPort(env: Env): ChainPort {
+export function viemPort(env: Env, options: { now?: () => number } = {}): ChainPort {
+  const now = options.now ?? (() => Date.now())
   const network = env.ARC_NETWORK?.trim() || 'mainnet'
   if (network !== 'mainnet' && network !== 'testnet') throw new Error('ARC_NETWORK must be mainnet or testnet.')
   const deployment = network === 'mainnet' ? mainnetDeployment : testnetDeployment
@@ -172,6 +176,10 @@ export function viemPort(env: Env): ChainPort {
   let verified: { at: number; value: Promise<void> } | undefined
   const pending: { current?: PendingTransaction } = {}
   const lane = new SubmissionLane()
+  type BoardSnapshot = Omit<Awaited<ReturnType<ChainPort['messages']>>, 'snapshot'> & { blockNumber: bigint; fetchedAt: number }
+  let boardSnapshot: BoardSnapshot | undefined
+  let boardRefresh: Promise<BoardSnapshot> | undefined
+  let boardBudget: { at: number; attempts: number } | undefined
 
   const padReadAbi: Abi = launchpadGateAbi
   const boardReadAbi: Abi = boardGateAbi
@@ -376,6 +384,58 @@ export function viemPort(env: Env): ChainPort {
   const auth = (signed: Signed) => ({ ...signed.auth })
   const unreadable = (transaction: Hex): never => { throw new GateError(502, 'unreadable_receipt', 'The transaction confirmed but its expected action could not be decoded. Inspect the transaction before another payment.', { transaction, status: 'confirmed', retryable: false }) }
 
+  async function readBoardSnapshot(): Promise<BoardSnapshot> {
+    await verifyChain()
+    const head = await client.getBlockNumber({ cacheTime: 0 })
+    const total = await client.readContract({ address: bbs, abi: boardGateAbi, functionName: 'messageCount', blockNumber: head })
+    if (total > BigInt(Number.MAX_SAFE_INTEGER)) throw new GateError(502, 'unreadable_history', 'The board count could not be represented safely.')
+    if (total === 0n) return { total: 0, complete: true, messages: [], blockNumber: head, fetchedAt: now() }
+    const event = getAbiItem({ abi: boardGateAbi, name: 'Message' })
+    const ids = new Set<bigint>()
+    const { logs, complete } = await readLogWindows({
+      head, windows: BOARD_WINDOWS,
+      read: async (fromBlock, toBlock) => {
+        const logs = await client.getLogs({ address: bbs, event, fromBlock, toBlock })
+        for (const log of logs) {
+          if (log.args.id === undefined || log.args.id >= total || ids.has(log.args.id)) throw new GateError(502, 'unreadable_history', 'The board history did not match its snapshot count.')
+          ids.add(log.args.id)
+        }
+        return logs
+      },
+      // The immutable 0..total-1 IDs prove there are no older messages to scan.
+      reachedStart: () => Promise.resolve(BigInt(ids.size) === total),
+    })
+    if (complete && BigInt(ids.size) !== total) throw new GateError(502, 'unreadable_history', 'The complete board history did not match its snapshot count.')
+    const messages = logs.sort((a, b) => Number(b.blockNumber - a.blockNumber) || b.logIndex - a.logIndex).slice(0, 100).map((log) => {
+      if (log.args.id === undefined || !log.args.from || log.args.time === undefined || log.args.text === undefined) throw new GateError(502, 'unreadable_history', 'A board event could not be decoded.')
+      return { id: log.args.id, from: log.args.from, time: log.args.time, text: log.args.text, transaction: log.transactionHash }
+    })
+    return { total: Number(total), complete, messages, blockNumber: head, fetchedAt: now() }
+  }
+
+  async function messages(count: number): ReturnType<ChainPort['messages']> {
+    if (!Number.isInteger(count) || count < 0) throw new GateError(400, 'invalid_field', 'count must be a nonnegative whole number.')
+    const at = now()
+    const age = boardSnapshot ? at - boardSnapshot.fetchedAt : BOARD_SNAPSHOT_TTL_MS
+    let value = age >= 0 && age < BOARD_SNAPSHOT_TTL_MS ? boardSnapshot : undefined
+    if (!value) {
+      if (!boardRefresh) {
+        if (!boardBudget || at - boardBudget.at >= BOARD_SCAN_WINDOW_MS) boardBudget = { at, attempts: 0 }
+        if (boardBudget.attempts >= BOARD_SCAN_LIMIT) throw new GateError(429, 'history_rate_limited', 'Board history refreshes are temporarily limited. Retry after the indicated delay.', { retryable: true, retryAfter: Math.max(1, Math.ceil((boardBudget.at + BOARD_SCAN_WINDOW_MS - at) / 1000)) })
+        // Charge failed attempts too; retries cannot bypass the service-wide RPC budget.
+        boardBudget.attempts++
+        boardRefresh = (async () => {
+          try { const snapshot = await readBoardSnapshot(); boardSnapshot = snapshot; return snapshot } finally { boardRefresh = undefined }
+        })()
+      }
+      value = await boardRefresh
+    }
+    return {
+      total: value.total, complete: value.complete, messages: value.messages.slice(0, Math.min(count, 100)),
+      snapshot: { blockNumber: value.blockNumber, fetchedAt: value.fetchedAt, ageMs: Math.max(0, now() - value.fetchedAt), ttlMs: BOARD_SNAPSHOT_TTL_MS },
+    }
+  }
+
   return {
     chainId: chain.id, testnet: network === 'testnet', explorer: deployment.explorerBase, usdc: USDC, launchpad, bbs, canRelay: Boolean(relayer), readiness, transaction: status, recover, pendingTransaction: () => pending.current?.transaction,
     async authorizationUsed(asset, auth) { await verifyChain(); return client.readContract({ address: asset, abi: launchTokenGateAbi, functionName: 'authorizationState', args: [auth.from, auth.nonce] }) },
@@ -392,17 +452,7 @@ export function viemPort(env: Env): ChainPort {
     async tokenName(token) { const [name, symbol] = await Promise.all([client.readContract({ address: token, abi: launchTokenGateAbi, functionName: 'name' }), client.readContract({ address: token, abi: launchTokenGateAbi, functionName: 'symbol' })]); return { name, symbol } },
     async quoteBuy(token, usdcIn) { try { const [tokensOut, fee, usdcSpent, graduates] = await readLaunchpad<readonly [bigint, bigint, bigint, boolean]>('quoteBuy', [token, usdcIn]); return { tokensOut, fee, usdcSpent, graduates } } catch (error) { refuse(error) } },
     async quoteSell(token, tokensIn) { try { const [usdcOut, fee] = await readLaunchpad<readonly [bigint, bigint]>('quoteSell', [token, tokensIn]); return { usdcOut, fee } } catch (error) { refuse(error) } },
-    async messages(count) {
-      await verifyChain()
-      const event = getAbiItem({ abi: boardGateAbi, name: 'Message' })
-      const [total, head] = await Promise.all([readBoard<bigint>('messageCount'), client.getBlockNumber()])
-      const { logs, complete } = await readLogWindows({ head, windows: BOARD_WINDOWS, read: (fromBlock, toBlock) => client.getLogs({ address: bbs, event, fromBlock, toBlock }) })
-      const messages = logs.sort((a, b) => Number(b.blockNumber - a.blockNumber) || b.logIndex - a.logIndex).slice(0, count).map((log) => {
-        if (log.args.id === undefined || !log.args.from || log.args.time === undefined || log.args.text === undefined) throw new GateError(502, 'unreadable_history', 'A board event could not be decoded.')
-        return { id: log.args.id, from: log.args.from, time: log.args.time, text: log.args.text, transaction: log.transactionHash }
-      })
-      return { total: Number(total), complete, messages }
-    },
+    messages,
     launchNonce: (params, salt) => readLaunchpad<Hex>('launchNonce', [params, salt]), buyNonce: (token, minimum, salt) => readLaunchpad<Hex>('buyNonce', [token, minimum, salt]), sellNonce: (token, minimum, salt) => readLaunchpad<Hex>('sellNonce', [token, minimum, salt]), postNonce: (text, salt) => readBoard<Hex>('postNonce', [text, salt]),
     async launch(params, signed) {
       const settlement = await settledProof(launchpad, signed)

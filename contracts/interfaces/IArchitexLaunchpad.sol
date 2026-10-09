@@ -16,7 +16,7 @@ interface IArchitexLaunchpad {
     struct Curve {
         address token;
         address creator;
-        address pair; // Architex pair for (token, USDC); holds liquidity only after graduation
+        address pair; // Architex pair for (token, USDC); launch-token deposits open at graduation
         uint128 virtualUsdc; // 6 decimals
         uint128 virtualTokens; // 18 decimals
         uint128 tokensSold; // 18 decimals, at most CURVE_SUPPLY
@@ -58,6 +58,7 @@ interface IArchitexLaunchpad {
     function usdc() external view returns (address);
     function factory() external view returns (address);
     function feeTo() external view returns (address);
+    /// @notice Admin for fee recipients, launch/relay fees and relayers trusted for external payment recovery.
     function feeToSetter() external view returns (address);
     function launchFee() external view returns (uint256);
     /// @notice Trade and launch fees accrued in the launchpad and not yet sent to `feeTo`.
@@ -109,6 +110,8 @@ interface IArchitexLaunchpad {
     function collectFees() external returns (uint256 amount);
 
     function setFeeTo(address feeTo) external;
+    /// @notice Current admin only: transfer fee and payment-recovery controls to a nonzero admin.
+    /// @dev ZeroAddress prevents abandoning relayer rotation used for trusted external credit and refunds.
     function setFeeToSetter(address feeToSetter) external;
     function setLaunchFee(uint256 launchFee) external;
 }

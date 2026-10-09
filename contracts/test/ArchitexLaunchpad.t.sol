@@ -202,19 +202,69 @@ contract ArchitexLaunchpadTest is AuthorizationFixture {
         pad.setLaunchFee(100e6 + 1);
         pad.setFeeTo(bob);
         pad.setLaunchFee(100e6);
+        vm.expectEmit(true, false, false, true, address(pad));
+        emit IArchitexLaunchpad.FeeToSetterUpdated(bob);
         pad.setFeeToSetter(bob);
         vm.stopPrank();
-        vm.prank(setter);
-        vm.expectRevert(IArchitexLaunchpad.Forbidden.selector);
-        pad.setRelayer(mallory, true);
+        assertEq(pad.feeToSetter(), bob);
         assertEq(pad.feeTo(), bob);
-    }
-    function test_feeAdminRenounceIsIrreversible() public {
-        vm.prank(setter);
-        pad.setFeeToSetter(address(0));
-        vm.prank(setter);
+        assertEq(pad.launchFee(), 100e6);
+        assertEq(pad.tradeRelayFee(), 10_000);
+        assertEq(pad.launchRelayFee(), 150_000);
+        assertTrue(pad.isRelayer(relayer));
+
+        vm.startPrank(setter);
+        vm.expectRevert(IArchitexLaunchpad.Forbidden.selector);
+        pad.setFeeTo(mallory);
+        vm.expectRevert(IArchitexLaunchpad.Forbidden.selector);
+        pad.setFeeToSetter(mallory);
         vm.expectRevert(IArchitexLaunchpad.Forbidden.selector);
         pad.setLaunchFee(1);
+        vm.expectRevert(IArchitexLaunchpad.Forbidden.selector);
+        pad.setRelayFees(1, 1);
+        vm.expectRevert(IArchitexLaunchpad.Forbidden.selector);
+        pad.setRelayer(mallory, true);
+        vm.stopPrank();
+
+        vm.startPrank(bob);
+        pad.setFeeTo(mallory);
+        pad.setLaunchFee(500_000);
+        pad.setRelayFees(20_000, 200_000);
+        pad.setRelayer(relayer, false);
+        pad.setRelayer(mallory, true);
+        vm.stopPrank();
+        assertEq(pad.feeTo(), mallory);
+        assertEq(pad.launchFee(), 500_000);
+        assertEq(pad.tradeRelayFee(), 20_000);
+        assertEq(pad.launchRelayFee(), 200_000);
+        assertFalse(pad.isRelayer(relayer));
+        assertTrue(pad.isRelayer(mallory));
+        assertFalse(bbs.isRelayer(relayer));
+        assertTrue(bbs.isRelayer(mallory));
+    }
+    function test_zeroFeeAdminRejectedAndStatePreserved() public {
+        _launch(100e6, false);
+        uint256 feesBefore = pad.pendingFees();
+        uint256 reservesBefore = pad.liveCurveReserves();
+        vm.recordLogs();
+        vm.prank(setter);
+        vm.expectRevert(IArchitexLaunchpad.ZeroAddress.selector);
+        pad.setFeeToSetter(address(0));
+        assertEq(vm.getRecordedLogs().length, 0);
+        assertEq(pad.feeToSetter(), setter);
+        assertEq(pad.feeTo(), feeTo);
+        assertEq(pad.launchFee(), 250_000);
+        assertEq(pad.tradeRelayFee(), 10_000);
+        assertEq(pad.launchRelayFee(), 150_000);
+        assertTrue(pad.isRelayer(relayer));
+        assertEq(pad.pendingFees(), feesBefore);
+        assertEq(pad.liveCurveReserves(), reservesBefore);
+
+        vm.prank(setter);
+        pad.setRelayer(mallory, true);
+        assertTrue(pad.isRelayer(mallory));
+        assertTrue(bbs.isRelayer(mallory));
+        _assertAccounting();
     }
     function test_paymentUnderpaymentRevertsAtomically() public {
         usdc.setUnderpay(true);

@@ -82,20 +82,29 @@ Spot price = `virtualUsdc / virtualTokens`.
    (e) `liquidityLocked = pair.mint(DEAD)` (the return value, liquidity locked forever);
    (f) emit `Graduated`.
    It must **not** use the router: a donated-and-`sync()`ed pair (reserves `(0, x)`) would make the
-   router's quote revert and brick graduation. Direct `mint` on balances is immune.
+   router's quote revert and brick graduation. Direct `mint` accepts the launchpad's deposits in
+   either case. Final pair reserves include the donation; `Graduated.usdcSeeded` records only the
+   curve's exact contribution. A synced donation is already in reserves and excluded from the
+   first mint's deposit delta, while an unsynced donation is included in that delta.
 4. After graduation `buy`/`sell` revert with `CurveGraduated()`; trading continues on the Architex pair.
 
 ## Token transfer rule
 
-While not graduated, `LaunchToken` reverts any transfer whose recipient is `pair`. Nobody can seed the
-pair early, so `totalSupply` of the pair is 0 at graduation and the opening price is the curve's.
+While not graduated, `LaunchToken` reverts any transfer whose recipient is `pair`. Nobody can deposit
+launch tokens to the pair early, so `totalSupply` of the pair is 0 at graduation. USDC can still be
+donated to the pair; the opening price matches the curve only when there is no prior USDC donation.
 All other transfers are free from the first buy.
 
 ## Admin surface (the owner's Ledger)
 
-`feeToSetter` can `setFeeTo` (not zero, not the launchpad itself), `setFeeToSetter` (setting the zero
-address is an irreversible renounce; say so in NatSpec) and `setLaunchFee(≤ MAX_LAUNCH_FEE)`. Nothing
-else is mutable: no pause, no upgrade, no access to curve funds, no parameter changes to live curves.
+`feeToSetter` controls the fee recipient, launch fee, relayer allowlist and bounded relay fees through
+`setFeeTo` (not zero, not the launchpad itself), `setLaunchFee(≤ MAX_LAUNCH_FEE)`, `setRelayer` and
+`setRelayFees`. `setFeeToSetter` transfers those controls to a nonzero successor; the zero address
+reverts with `ZeroAddress()` and leaves the admin and configuration unchanged. This preserves the
+ability to rotate relayers trusted for external settlement credit and refunds on the launchpad and
+the board, whose relayer allowlist follows the launchpad. Recovery remains an explicitly trusted
+relayer operation, subject to the payment rules in `docs/agents/X402-GATE-SPEC.md`.
+There is no pause, upgrade, access to accounted curve funds or parameter change to live curves.
 `name`, `symbol` and `metadataURI` are untrusted bytes with length limits only; uniqueness is not
 enforced and rendering rules live in `FRONTEND-BRIEF.md`.
 
@@ -106,9 +115,12 @@ enforced and rendering rules live in `FRONTEND-BRIEF.md`.
   over non-graduated curves; `k` never decreases across a trade; `tokensSold ≤ CURVE_SUPPLY`;
   `virtualTokens + tokensSold == VIRTUAL_TOKENS_0`. `SafeCast` on every `uint128` write.
 - Round trip: buy then immediately sell the same tokens never returns more USDC than was paid.
-- Graduation is atomic; works when the pair pre-exists; never reverts because USDC was donated to the
-  pair (with or without `sync()`); LP tokens end at `DEAD`; the pool opens at the curve's final price
-  within 1e-6 relative **when the pair held no USDC beforehand** (a donation only gifts value to the pool).
+- Graduation is atomic; works when the pair pre-exists and with prior USDC donations to the pair
+  (with or without `sync()`). The launchpad transfers and emits the exact curve seed; final pair
+  reserves also include donations, and all initial LP tokens end at `DEAD`. The pool opens at the
+  curve's final price within 1e-6 relative **when the pair held no USDC beforehand**.
+- A zero admin transfer reverts without changing state or emitting an admin update; a nonzero
+  successor can still rotate the fee recipient, bounded fees and relayers.
 - Two live curves: graduating A leaves B's USDC untouched and B can still sell and graduate.
 - A `feeTo` that reverts or is blocklisted never blocks `createToken`, `buy`, `sell` or graduation.
 - Transfers to the pair revert before graduation and succeed after.
