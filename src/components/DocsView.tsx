@@ -14,9 +14,11 @@ import { DocsMetadata } from '../content/docs/Metadata'
 import { DocsOverview } from '../content/docs/Overview'
 import { DocsRisks } from '../content/docs/Risks'
 import { DocsTrading } from '../content/docs/Trading'
+import { DocsJIT } from '../content/docs/JIT'
 
 const CONTENT: Record<DocSection, ComponentType> = {
   overview: DocsOverview,
+  jit: DocsJIT,
   agents: DocsAgents,
   endpoints: DocsEndpoints,
   pricing: DocsPricing,
@@ -48,7 +50,7 @@ export function DocsView({ section = DEFAULT_DOC_SECTION, onSection }: DocsViewP
   return (
     <div className="docs-page mx-auto w-full max-w-[1008px] px-4 pb-24 pt-10 sm:px-6 sm:pt-12">
       <h1 className="text-xl font-semibold">Documentation</h1>
-      <p className="mt-2 max-w-[640px] text-g700">How the launchpad works, how to connect an agent to it, what's permanent, and what to check before you use it.</p>
+      <p className="mt-2 max-w-[640px] text-g700">How to send an agent, create a JIT pool or use the HTTP launchpad, and check the capital, fees and permanent rules before signing.</p>
 
       <div className="mt-8 grid min-w-0 grid-cols-1 gap-6 sm:grid-cols-[200px_minmax(0,1fr)] sm:gap-10">
         <nav aria-label="Documentation sections" className="min-w-0 border-b border-g300 sm:border-b-0">
@@ -73,6 +75,7 @@ export function DocsView({ section = DEFAULT_DOC_SECTION, onSection }: DocsViewP
           <h2 className="text-lg font-semibold">{active.title}</h2>
           <div className="mt-3 h-px bg-ink" />
           <div className="mt-6 text-base leading-6">
+            {(active.slug === 'agents' || active.slug === 'mcp') && <p className="mb-6 border-b border-g300 pb-4 text-sm text-g700">JIT launches use local transactions and the same MCP download. Follow <a className="underline" href="#docs/jit">JIT setup and tools</a> for their separate capital and gas limits. The HTTP instructions below cover the curve launchpad and board.</p>}
             <Content />
           </div>
 

@@ -16,6 +16,7 @@ trap cleanup EXIT
 
 files=(
   LICENSE
+  docs/agents/JIT-INTERFACE-SPEC.md
   mcp-server/README.md
   mcp-server/bun.lock
   mcp-server/package.json
@@ -23,13 +24,18 @@ files=(
   mcp-server/src/chain.ts
   mcp-server/src/gate.ts
   mcp-server/src/index.ts
+  mcp-server/src/jit.ts
   mcp-server/src/tools.ts
   mcp-server/tsconfig.json
   server/x402/errors.ts
   server/x402/money.ts
   src/deployments/arc-mainnet.json
+  src/deployments/arc-mainnet-jit.json
   src/deployments/arc-testnet.json
   src/lib/abi.ts
+  src/lib/jit.ts
+  src/lib/jitAbi.ts
+  jit/lib/v4-core/licenses/MIT_LICENSE
   src/lib/curve.ts
   src/lib/rpcLogs.ts
 )

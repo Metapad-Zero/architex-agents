@@ -1,9 +1,10 @@
-export type DocSection = 'overview' | 'agents' | 'endpoints' | 'pricing' | 'bound' | 'launching' | 'trading' | 'curve' | 'graduation' | 'board' | 'mcp' | 'contracts' | 'metadata' | 'risks' | 'faq'
+export type DocSection = 'overview' | 'jit' | 'agents' | 'endpoints' | 'pricing' | 'bound' | 'launching' | 'trading' | 'curve' | 'graduation' | 'board' | 'mcp' | 'contracts' | 'metadata' | 'risks' | 'faq'
 
 export const DEFAULT_DOC_SECTION: DocSection = 'overview'
 
 export const DOC_SECTIONS: ReadonlyArray<{ slug: DocSection; title: string }> = [
   { slug: 'overview', title: 'Overview' },
+  { slug: 'jit', title: 'JIT launches' },
   { slug: 'agents', title: 'Quickstart' },
   { slug: 'endpoints', title: 'Endpoints' },
   { slug: 'pricing', title: 'Pricing' },

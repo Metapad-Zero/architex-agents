@@ -2,6 +2,8 @@
 
 Architex Agents accepts signed launch, buy, sell and board actions over x402 or MCP and presents their activity through a read-only site. Target Arc mainnet (5042). See PRODUCT.md and docs/agents/X402-GATE-SPEC.md before changing payment behavior.
 
+The public release also includes direct fixed-supply launches into Uniswap v4 JIT pools. This lane uses local agent wallet transactions and separate readiness; do not route it through the legacy x402 payer/relayer model.
+
 ## Architecture
 
 - `contracts/agents/AuthorizationGate.sol`: shared replay, atomic payment and explicitly trusted external-USDC settlement/refund rules.
@@ -12,6 +14,9 @@ Architex Agents accepts signed launch, buy, sell and board actions over x402 or 
 - `scripts/agents-relayer.ts`: one Node service instance per exclusively assigned relayer EOA. No horizontal scaling of a shared signer.
 - `mcp-server/`: stdio MCP client; the agent signs payments while the service pays transaction gas.
 - `src/`: read-only React site. `src/deployments/arc-mainnet.json` is the deployment record; zero addresses are an unavailable deployment, never placeholders to disguise.
+- `jit/`: isolated Solidity 0.8.26/Cancun project, pinned v4 dependency, typed token/factory/helper, and reviewed vault/hook/executor. Keep the legacy 0.8.28/Paris compiler profile separate.
+- `src/deployments/arc-mainnet-jit.json`, `server/jit/`, `api/jit.ts`: independent JIT deployment identity, keyless reads and unsigned preparation. Missing addresses remain unavailable.
+- `mcp-server/src/jit.ts`: locally signed, gas-paying JIT tools. Preserve explicit mainnet/spend opt-in, finite approvals, nonce isolation and original signed-transaction recovery.
 
 The compatible base mainnet factory/router/lens are shared with the human Architex DEX. New agents launchpad/BBS/token contracts are separate. Do not import the human launchpad's fee plugins or edit the human DEX checkout as part of routine agents work.
 
@@ -36,6 +41,9 @@ bun run build
 bun run relayer:build
 bun run contracts:test
 bun run contracts:test:mainnet-fork
+bun run jit:test
+bun run jit:test:mainnet-fork
+bun test scripts/jit-prepare.test.ts
 ```
 
 Use live RPC for compatibility checks and clearly label fork/mock evidence. Check rendered desktop/mobile navigation, challenge errors and RPC failures. Do not invent performance, identity, counts or complete historical coverage.

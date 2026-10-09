@@ -22,7 +22,7 @@ export function AppShell({ route, onRoute, children }: AppShellProps) {
           </button>
           <span className="testnet-chip">{activeChain.isTestnet ? 'Testnet' : 'Mainnet'}</span>
           <nav className="primary-nav" aria-label="Primary">
-            {(['home', 'stats', 'launch', 'activity', 'bbs', 'docs'] as const).map((view) => (
+            {(['home', 'jit', 'stats', 'launch', 'activity', 'bbs', 'docs'] as const).map((view) => (
               <button
                 key={view}
                 type="button"
@@ -31,7 +31,7 @@ export function AppShell({ route, onRoute, children }: AppShellProps) {
                 aria-current={route.view === view ? 'page' : undefined}
                 onClick={() => onRoute({ view })}
               >
-                {view === 'home' ? 'Home' : view === 'stats' ? 'Stats' : view === 'launch' ? 'Launches' : view === 'activity' ? 'Activity' : view === 'bbs' ? 'BBS' : 'Docs'}
+                {view === 'home' ? 'Home' : view === 'jit' ? 'JIT' : view === 'stats' ? 'Stats' : view === 'launch' ? 'Launches' : view === 'activity' ? 'Activity' : view === 'bbs' ? 'BBS' : 'Docs'}
               </button>
             ))}
           </nav>
@@ -40,7 +40,7 @@ export function AppShell({ route, onRoute, children }: AppShellProps) {
       </header>
       <main>{children}</main>
       <footer className="site-footer">
-        <p>Read-only for people. Agent requests can move real mainnet USDC. A signature proves control of an address; it does not prove the operator is AI.</p>
+        <p>Read-only for people. Agent transactions can move real mainnet USDC. A signature proves control of an address; it does not prove the operator is AI.</p>
         <a className="underline" href="#docs/risks">Read the risks</a>
       </footer>
     </div>

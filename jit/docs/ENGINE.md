@@ -1,11 +1,12 @@
-# Architex JIT engine: milestone 1
+# Architex JIT engine and direct launches
 
-This isolated Solidity subproject prototypes one token/ERC20-USDC pool on Arc
-mainnet. It does not deploy contracts, provision capital, integrate signed
-orders into the gateway, or establish production custody and creator economics.
-The existing V2 contracts, launchpad, gateway and root compiler profile are
-unchanged. Local fixtures mint a model launch token and use explicit test policy
-parameters; those prices and balances are not market observations.
+This isolated Solidity subproject implements one token/ERC20-USDC pool per
+engine on Arc mainnet. The reviewed core is extended by a typed factory for
+new fixed-supply tokens. Direct launches require creator-funded USDC and locally
+signed transactions; they do not use the legacy x402 relayer. The existing V2
+contracts, launchpad and root compiler profile are unchanged. Source, local and
+fork verification do not deploy a production service or establish funded
+acceptance. Local fixture prices and balances are not market observations.
 
 The engine keeps a wider baseline position present. On an eligible swap, its
 pool-specific hook adds an inventory-capped position at immutable narrow tick
@@ -20,7 +21,7 @@ pool hook; trades in other pools do not use this engine.
 - `ArchitexJITVault` holds cash and PoolManager ERC6909 claims for the two pool
   currencies. Claims are a representation of custody, not additional assets.
   Historical deposit totals are not redeemable shares or a guarantee against
-  trading loss. The prototype has no principal-withdrawal function.
+  trading loss. The vault has no principal-withdrawal function.
 - `ArchitexJITHook` authenticates PoolManager callbacks and the exact PoolKey,
   owns separate baseline and temporary positions, and enforces a bounded swap
   lifecycle. Immutable policy and pool configuration avoid arbitrary strategy
@@ -39,8 +40,10 @@ PoolManager unlock. Fees, available inventory and active positions are distinct.
 Only collected position fee deltas enter fee credits; unsolicited cash is not
 automatically fee revenue. v4 fee-growth values can include donations, so they
 must not be advertised as volume-derived revenue. The hook rejects pool donate
-calls. Its immutable fee recipient is a prototype fixture choice, not an
-approved production creator/protocol split.
+calls. A direct launch sends all collected LP fees, in both earned assets, to
+its explicitly chosen immutable recipient. Pool swap fee is 0.30%; collected LP
+fees must be distinguished from total volume and any PoolManager protocol fee.
+The factory does not add a fee split, quote-only conversion or holder stream.
 
 The vault deployer has one trusted setup action: bind the hook and give it
 PoolManager claim-operator rights. Interface checks establish matching vault and
@@ -50,7 +53,7 @@ accepting deposits. Binding cannot be rotated afterward. Deposit and fee-claim
 operations reject an unlocked PoolManager, and the hook rejects entry during a
 vault inventory operation. The executor requires caller-owned approvals and
 enforces the actual input/output, recipient, deadline, price limit and explicit
-partial-fill choice; there is no signed-order gateway in this milestone.
+partial-fill choice; no gas-sponsored signed-order adapter is added for JIT.
 
 Constructor policy checks reject per-tick or combined liquidity above the pinned
 core's limits, initial baseline funding amounts above `int128.max`, and either
@@ -62,8 +65,43 @@ remain within those caps after trading.
 Permanent custody and movable positions are compatible when movement stays
 within the vault's own inventory and positions. They are separate from price
 protection: range selection, adverse selection and persistent one-direction
-flow can still cause loss or exhaust useful inventory. A public permanent-custody
-promise and production capital policy remain outside this milestone.
+flow can still cause loss or exhaust useful inventory. Under direct-launch
+terms, deposits and idle inventory have no redemption right. This does not
+guarantee that useful liquidity remains at every price.
+
+## Direct-launch factory
+
+`ArchitexJITToken` is an OpenZeppelin ERC20 with one constructor mint of one
+billion tokens at 18 decimals. There is no mint, burn, owner or upgrade API.
+`ArchitexJITFactory` mints the supply to itself, deploys the pool-specific vault,
+hook and executor, binds the vault, deposits the complete supply and creator's
+USDC, and seeds baseline in one reverting transaction. Creator receives no
+free token allocation. Custody does not burn or reduce `totalSupply()`.
+
+The factory pins fee 3000, tick spacing 60 and maximum `uint64` policy expiry.
+Price, nested ranges, liquidity, inventory caps and minimum swap sizes remain
+explicit inputs. It proves rounded baseline amounts plus initial temporary
+amounts fit deposited capital and JIT caps. It also checks the remaining vault
+inventory after seeding. Future price moves or inventory depletion may still
+disable temporary liquidity while the baseline continues.
+
+Creation code is split between the factory and `ArchitexJITHookDeployer` to
+respect deployment size limits. The factory constructor authenticates the
+deployer's exact runtime and matching manager. The deployer's manager is
+constructor-set storage with no setter, so the runtime has no address-dependent
+immutable bytes. The factory constructs the vault itself and is its only
+one-time binder; neither callers nor the deployer can substitute arbitrary hook
+bytecode. The three reviewed engine contracts are unchanged.
+
+Launch IDs are `keccak256(abi.encode(creator, creatorNonce))`. CREATE2 salts are
+domain-separated by launch ID, with a separately mined hook salt nonce. Hook
+mining does not change token or vault predictions. Full configuration hashes
+include names, metadata, all policy fields, capital, recipient, nonce and
+deadline. The registry and `LaunchCreated` event identify the real deployed
+engine; metadata URI may be empty and is recorded in the event.
+
+See [the release procedure](MAINNET-RELEASE.md) for unsigned preparation, exact
+code identity, native-USDC gas/capital budgeting and funded acceptance gates.
 
 ## Compiler and dependency pin
 
@@ -82,6 +120,8 @@ have the later `src/types/PoolOperation.sol` layout. The snapshot includes
 original `src/` except upstream `src/test/`, and original license files.
 [`PIN.json`](../lib/v4-core/PIN.json) records every vendored file's SHA256 and
 SPDX identifier. Existing root `lib/forge-std` is used only for tests.
+The token and factory reuse the root's pinned OpenZeppelin 5.1 MIT dependency;
+the JIT remapping and compiler allowlist reference existing `node_modules`.
 
 Licenses are preserved per file:
 
@@ -249,10 +289,14 @@ The 5,000-model-USDC example returned 4,991.094976658144218218 versus
 4,765.001287335211034757 model tokens, using 655,743 versus 356,065 gas. The
 structured artifact records raw units and the comparison's limitations.
 
-Milestone 1 is complete. Production capital/custody terms, creator fee splits,
-signed gateway/MCP swaps and launch integration remain the separately scoped
-next milestone. No new JIT deployment addresses or acceptance transactions
-exist, and existing V2 launches continue using their current graduation path.
+The verified core and direct-launch implementation now include the factory,
+capital/custody terms, immutable LP fee recipient, keyless API, local-wallet MCP
+tools and public inspection pages. The complete local suite passes 72 tests;
+the native Arc fork suite passes 13 tests with zero skips, including the new
+factory and official Quoter/executor parity. All fork capital is synthetic.
+Funded deployment, acceptance receipts and the owner's Firepan gate remain
+outstanding. No new JIT deployment addresses or acceptance transactions exist;
+existing V2 launches retain their current graduation path.
 
 Primary references: [v4 deployment list](https://developers.uniswap.org/docs/protocols/v4/deployments),
 [pinned core](https://github.com/Uniswap/v4-core/tree/e50237c43811bd9b526eff40f26772152a42daba),

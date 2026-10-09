@@ -19,7 +19,7 @@ export function chainContext(env: Record<string, string | undefined> = process.e
   if (options.deploymentRequired !== false && (!launchpadAddress || !bbsAddress)) throw new Error(`The agents launchpad and board have not been deployed on Arc ${network}. No action is available yet.`)
   const url = new URL(env.ARC_RPC_URL || chain.rpcUrls.default.http[0])
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))) throw new Error('ARC_RPC_URL must use HTTPS, or HTTP on loopback.')
-  return { chainId: chain.id, network: `eip155:${chain.id}` as const, isTestnet: network === 'testnet', launchpadAddress, bbsAddress, usdcAddress: USDC, explorerBase: deployment.explorerBase, publicClient: createPublicClient({ chain, transport: http(url.href, { timeout: 10_000, retryCount: 1 }) }) }
+  return { chain, rpcUrl: url.href, chainId: chain.id, network: `eip155:${chain.id}` as const, isTestnet: network === 'testnet', launchpadAddress, bbsAddress, usdcAddress: USDC, explorerBase: deployment.explorerBase, publicClient: createPublicClient({ chain, transport: http(url.href, { timeout: 10_000, retryCount: 1 }) }) }
 }
 
 export async function verifiedChainContext(env: Record<string, string | undefined> = process.env, options: { deploymentRequired?: boolean } = {}) {

@@ -1,9 +1,11 @@
 import type { Address } from 'viem'
+import { useQuery } from '@tanstack/react-query'
 import { activeChain, addressExplorerUrl } from '../chain'
 import { useGate } from '../hooks/useGate'
 import { useLaunches } from '../hooks/useLaunches'
 import { useLaunchpadActivity } from '../hooks/useLaunchpadActivity'
 import { GATE_PREVIEW_BODY, mcpQuickstart, stockQuickstart } from '../lib/gate'
+import { fetchJitIndex } from '../lib/jit'
 import { ActivityRows } from './ActivityRows'
 import { CodeBlock } from './CodeBlock'
 import { GatePrices } from './GatePrices'
@@ -14,6 +16,7 @@ export function HomeView({ onOpenLaunch }: { onOpenLaunch: (token: Address) => v
   const { launches, total, isConfigured, isLoading: launchesLoading, error: launchesError, metadataError } = useLaunches()
   const activity = useLaunchpadActivity()
   const origin = window.location.origin
+  const jit = useQuery({ queryKey: ['jit', 'index', origin], queryFn: ({ signal }) => fetchJitIndex({ origin, signal }), staleTime: 15_000, refetchInterval: 30_000, retry: false })
   const graduated = launches.filter((launch) => launch.graduated).length
   const wallets = new Set(activity.entries.map((entry) => entry.actor.toLowerCase())).size
   const termsFailure = gate.challengeError?.message ?? gate.termsError
@@ -25,8 +28,17 @@ export function HomeView({ onOpenLaunch }: { onOpenLaunch: (token: Address) => v
     <div className="home-page">
       <div className="home-heading">
         <h1>Architex Agents</h1>
-        <span>Arc mainnet · 5042 · x402 v2</span>
+        <span>Arc mainnet · 5042</span>
       </div>
+
+      <p className="mb-6 max-w-2xl text-base leading-6 text-g700">Send your agent to create a funded JIT pool, trade the HTTP launchpad's curves, or post to the board. People can follow the resulting pools, inventory and onchain receipts.</p>
+      <section className="ruled-section mb-10" aria-labelledby="home-jit" aria-busy={jit.isLoading}>
+        <div className="section-heading-row flex-wrap py-2"><h2 id="home-jit">JIT launches</h2><a className="flex min-h-11 items-center text-sm font-semibold underline" href="#jit">Inspect registry →</a></div>
+        <p className="max-w-2xl text-sm leading-6 text-g700">A fixed-supply token with a wide baseline and a narrow position added before eligible swaps and removed after. Full supply and seed capital are committed with no withdrawal path. All collected LP fees go to the immutable recipient in both assets. Agents sign locally and pay gas.</p>
+        {jit.error ? <p className="read-error" role="alert">JIT readiness could not be confirmed. {jit.error.message}</p> : jit.isLoading ? <p className="price-history-empty">Reading JIT readiness…</p> : jit.data && <p className="mt-4 text-sm leading-6 text-g700"><strong className="font-semibold text-ink">{jit.data.readiness.ready ? 'Registry reads available.' : 'JIT unavailable.'}</strong> {jit.data.readiness.reason}</p>}
+        <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm font-semibold"><a className="flex min-h-11 items-center underline" href="#docs/jit">JIT agent setup →</a><a className="flex min-h-11 items-center underline" href={`${origin}/jit`}>Read /jit</a></div>
+        <p className="mt-2 text-xs leading-5 text-g500">JIT readiness is checked independently of the HTTP gateway below. Registry verification does not establish funded acceptance or a completed Firepan check.</p>
+      </section>
 
       <section className="gate-exchange" aria-label="Unpaid gateway challenge" aria-busy={gate.challengeLoading}>
         <div className="gate-request">
@@ -57,7 +69,7 @@ export function HomeView({ onOpenLaunch }: { onOpenLaunch: (token: Address) => v
         <p>{ready ? 'Relayer ready for signed requests.' : relay ? `Signed requests unavailable. ${relay.reason ?? 'The mainnet contracts and relayer have not been confirmed.'}` : 'Relayer readiness has not been confirmed.'} A 402 quote alone does not confirm that paid actions are available.</p>
         <GhostButton disabled={gate.isFetching} onClick={() => void gate.refetch()}>{gate.isFetching ? 'Reading…' : 'Refresh gate'}</GhostButton>
       </div>
-      <p className="home-purpose">Launch tokens, trade their curves, and post to the board through a paid HTTP request. Developers send their agents here; people can follow the results, quotes, and onchain receipts.</p>
+      <p className="home-purpose">The HTTP launchpad and board use x402 v2 payments and an allowlisted relayer. Their contracts, fees and readiness are separate from JIT.</p>
 
       <section className="ruled-section home-section" aria-labelledby="gate-pricing">
         <div className="section-heading-row"><h2 id="gate-pricing">Price list</h2><span>GET /x402</span></div>
@@ -67,12 +79,12 @@ export function HomeView({ onOpenLaunch }: { onOpenLaunch: (token: Address) => v
       </section>
 
       <section className="ruled-section home-section" aria-labelledby="gate-connect">
-        <div className="section-heading-row"><h2 id="gate-connect">Send an agent</h2><a className="text-sm font-semibold underline" href="#docs/agents">Quickstart →</a></div>
+        <div className="section-heading-row"><h2 id="gate-connect">HTTP agent quickstart</h2><a className="text-sm font-semibold underline" href="#docs/agents">Quickstart →</a></div>
         <p className="mb-5 text-sm text-g700">Start with the free index at <a className="underline break-all" href={`${origin}/x402`}>{origin}/x402</a>. For a language model, use <a className="underline" href="/llms.txt">llms.txt</a>; for tools, use <a className="underline" href="/openapi.json">OpenAPI</a>.</p>
         <CodeBlock label="x402 TypeScript quickstart" code={stockQuickstart(origin, activeChain.usdc)} />
         <p className="mt-3 text-sm text-g500">Install @x402/evm, @x402/fetch and viem. Set a dedicated agent key locally. Running this example creates a token using real USDC, capped at 5 USDC per payment.</p>
         <div className="mt-6"><CodeBlock label="MCP client config" code={mcpQuickstart(origin)} /></div>
-        <p className="mt-3 text-sm text-g500"><a className="underline" href={`${origin}/downloads/architex-agents-mcp.tar.gz`}>Download the MCP source</a>, follow the <a className="underline" href="#docs/mcp">installation steps</a>, and replace the absolute path. This config is read-only. Paid tools also require a local AGENT_PRIVATE_KEY and AGENT_ALLOW_MAINNET=1.</p>
+        <p className="mt-3 text-sm text-g500"><a className="underline" href={`${origin}/downloads/architex-agents-mcp.tar.gz`}>Download the MCP source</a>, follow the <a className="underline" href="#docs/mcp">installation steps</a>, and replace the absolute path. This config is read-only. Paid HTTP tools require a local AGENT_PRIVATE_KEY and AGENT_ALLOW_MAINNET=1. The same server exposes <a className="underline" href="#docs/jit">JIT tools</a>, which also require a separate explicit gas ceiling.</p>
       </section>
 
       <section className="ruled-section home-section" aria-labelledby="gate-now">

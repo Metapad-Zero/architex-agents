@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "chainId": 5042,
+  "network": "eip155:5042",
+  "explorerBase": "https://explorer.arc.io",
+  "factory": "0x0000000000000000000000000000000000000000",
+  "hookDeployer": "0x0000000000000000000000000000000000000000",
+  "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+  "usdc": "0x3600000000000000000000000000000000000000",
+  "quoter": "0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94",
+  "runtimeHashes": {
+    "factory": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "hookDeployer": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "poolManager": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626",
+    "quoter": "0xd707b1da8cb165e5ea35a3b4450d971eb562ec171e23492aa117036b78a868f6"
+  },
+  "transactions": {},
+  "status": "unavailable: JIT factory and hook deployer have not been deployed; no funded acceptance or Firepan release"
+}

@@ -6,6 +6,7 @@ import { stat } from 'node:fs/promises'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
 import { devMetadata } from './server/devMetadata'
 import { devGate } from './server/x402/devGate'
+import { devJitGate } from './server/jit/devGate'
 
 // Sirv treats a .gz pathname as HTTP content encoding. This archive is a downloadable file.
 function mcpDownload(): Plugin {
@@ -47,7 +48,7 @@ function mcpDownload(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), nodePolyfills(), devMetadata(), devGate(), mcpDownload()],
+  plugins: [react(), nodePolyfills(), devMetadata(), devGate(), devJitGate(), mcpDownload()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

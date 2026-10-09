@@ -3,6 +3,22 @@ pragma solidity ^0.8.26;
 
 import {JITFixture, ArcNativeJITSimulation, IJITNativeUSDC, JITHookAddress} from "../helpers/JITFixture.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {ArchitexJITExecutor} from "../../src/ArchitexJITExecutor.sol";
+
+interface IArcJITQuoter {
+    struct ExactInputSingle {
+        PoolKey poolKey;
+        bool zeroForOne;
+        uint128 exactAmount;
+        bytes hookData;
+    }
+
+    function poolManager() external view returns (IPoolManager);
+    function quoteExactInputSingle(ExactInputSingle calldata params)
+        external
+        returns (uint256 amountOut, uint256 gasEstimate);
+}
 
 interface IArcUSDCMetadata {
     function name() external view returns (string memory);
@@ -34,6 +50,7 @@ interface IArcUSDCMetadata {
 contract ArchitexJITArcForkTest is JITFixture {
     address private constant NATIVE_USDC = 0x3600000000000000000000000000000000000000;
     address private constant DEPLOYED_MANAGER = 0x8366a39CC670B4001A1121B8F6A443A643e40951;
+    address private constant DEPLOYED_QUOTER = 0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94;
     bytes32 private constant MANAGER_CODE_HASH = 0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626;
     uint256 private constant PINNED_BLOCK = 25_019_963;
     bool private forked;
@@ -59,6 +76,64 @@ contract ArchitexJITArcForkTest is JITFixture {
         assertEq(DEPLOYED_MANAGER.code.length, 24_009);
         assertEq(DEPLOYED_MANAGER.codehash, MANAGER_CODE_HASH);
         assertEq(address(manager), DEPLOYED_MANAGER);
+    }
+
+    function test_fork_officialQuoterCodeAndManagerPinned() public onlyFork {
+        assertEq(DEPLOYED_QUOTER.code.length, 6_118);
+        assertEq(DEPLOYED_QUOTER.codehash, 0xd707b1da8cb165e5ea35a3b4450d971eb562ec171e23492aa117036b78a868f6);
+        assertEq(address(IArcJITQuoter(DEPLOYED_QUOTER).poolManager()), DEPLOYED_MANAGER);
+    }
+
+    function test_fork_officialQuoterMatchesFullExecutorFillsBothDirections() public onlyFork {
+        // Assets are explicit models; the quoter and manager are actual pinned Arc contracts.
+        for (uint256 i; i < 2; ++i) {
+            bool zeroForOne = i == 0;
+            uint256 input = _wholeInput(zeroForOne, 1_000);
+            uint256 cycles = hook.jitCycles();
+            uint256 inventory0 = vault.availableInventory(address(asset0));
+            uint256 inventory1 = vault.availableInventory(address(asset1));
+            uint160 price = hook.currentSqrtPriceX96();
+            (uint256 quoted, uint256 quoteGas) = IArcJITQuoter(DEPLOYED_QUOTER).quoteExactInputSingle(
+                IArcJITQuoter.ExactInputSingle(key, zeroForOne, uint128(input), bytes(""))
+            );
+            assertGt(quoted, 0);
+            assertGt(quoteGas, 0);
+            // The Quoter's intentional revert must discard all temporary hook operations.
+            assertEq(hook.jitCycles(), cycles);
+            assertEq(hook.currentSqrtPriceX96(), price);
+            assertEq(vault.availableInventory(address(asset0)), inventory0);
+            assertEq(vault.availableInventory(address(asset1)), inventory1);
+            (uint256 paid, uint256 received) = _execute(zeroForOne, -int256(input));
+            assertEq(paid, input);
+            assertEq(received, quoted);
+            assertEq(hook.jitCycles(), cycles + 1);
+            _assertRestingState();
+        }
+    }
+
+    function test_fork_positiveQuoterDoesNotProveCustomPriceLimitExecutable() public onlyFork {
+        uint256 input = _wholeInput(true, 1_000);
+        (uint256 quoted,) = IArcJITQuoter(DEPLOYED_QUOTER).quoteExactInputSingle(
+            IArcJITQuoter.ExactInputSingle(key, true, uint128(input), bytes(""))
+        );
+        assertGt(quoted, 0);
+        uint160 current = hook.currentSqrtPriceX96();
+        ArchitexJITExecutor.SwapRequest memory request = ArchitexJITExecutor.SwapRequest({
+            zeroForOne: true,
+            amountSpecified: -int256(input),
+            sqrtPriceLimitX96: current - 1,
+            maximumInput: input,
+            minimumOutput: quoted,
+            recipient: TRADER,
+            deadline: block.timestamp + 1 hours,
+            allowPartialFill: false
+        });
+        vm.prank(TRADER);
+        vm.expectRevert();
+        executor.swap(request);
+        assertEq(hook.currentSqrtPriceX96(), current);
+        assertEq(hook.jitCycles(), 0);
+        _assertRestingState();
     }
 
     function test_fork_realNativeUSDCMetadataAndDomain() public onlyFork {

@@ -5,6 +5,7 @@ script = "script"
 out = "out"
 cache_path = "cache"
 libs = ["lib", "../lib"]
+allow_paths = ["../node_modules"]
 auto_detect_remappings = false
 solc_version = "0.8.26"
 auto_detect_solc = false

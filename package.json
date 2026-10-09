@@ -11,7 +11,7 @@
     "deploy:self": "bun run ./scripts/self-deploy.ts",
     "compass:deploy": "bun run ./scripts/compass-deploy.ts",
     "fetch:abi": "bun run ./scripts/fetch-abi.ts",
-    "lint": "oxlint --type-aware src server api mcp-server/src scripts/x402-e2e.ts scripts/agents-relayer.ts",
+    "lint": "oxlint --type-aware src server api mcp-server/src scripts/x402-e2e.ts scripts/agents-relayer.ts scripts/jit-prepare.ts",
     "typecheck": "tsc --noEmit",
     "check": "bash scripts/check.sh",
     "contracts:build": "forge build",
@@ -19,7 +19,11 @@
     "contracts:test:mainnet-fork": "forge test --match-path 'contracts/test/fork/AgentsMainnetFork.t.sol'",
     "relayer:build": "bun build scripts/agents-relayer.ts --target=node --format=esm --outfile=dist-relayer/agents-relayer.mjs",
     "relayer:start": "node dist-relayer/agents-relayer.mjs",
-    "agents:e2e": "bun run scripts/x402-e2e.ts"
+    "agents:e2e": "bun run scripts/x402-e2e.ts",
+    "jit:build": "forge build --root jit",
+    "jit:test": "forge test --root jit --no-match-path 'test/fork/*'",
+    "jit:test:mainnet-fork": "ARC_MAINNET_RPC=https://rpc.mainnet.arc.io ARC_NATIVE_FORK=1 \"${ARC_FORGE:-forge}\" test --root jit --network arc --match-path 'test/fork/*'",
+    "jit:prepare": "bun run scripts/jit-prepare.ts"
   },
   "dependencies": {
     "@circle-fin/adapter-solana": "^1.7.3",

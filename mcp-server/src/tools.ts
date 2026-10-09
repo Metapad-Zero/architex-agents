@@ -151,12 +151,13 @@ export async function quoteSell(token: `0x${string}`, tokensIn: bigint) {
 export async function getAgentWallet() {
   const { account } = requireAgentWallet()
   const { publicClient, usdcAddress, explorerBase, isTestnet } = await verifiedChainContext(process.env, { deploymentRequired: false })
-  const balance = await publicClient.readContract({ address: usdcAddress, abi: erc20Abi, functionName: 'balanceOf', args: [account.address] })
+  const [balance, gasBalance] = await Promise.all([publicClient.readContract({ address: usdcAddress, abi: erc20Abi, functionName: 'balanceOf', args: [account.address] }), publicClient.getBalance({ address: account.address })])
   return {
     address: account.address,
     network: isTestnet ? 'Arc Testnet' : 'Arc',
     usdcBalance: { raw: balance.toString(), formatted: usd(balance) },
-    note: 'This balance is what the agent pays with. It signs payments and never sends a transaction, so it needs no gas.',
+    nativeGasBalance: { raw: gasBalance.toString(), formatted: formatUnits(gasBalance, 18) },
+    note: 'Legacy x402 actions sign payments while a relayer pays gas. Direct JIT tools send wallet transactions and pay gas. Arc ERC20 USDC (6 decimals) and native gas USDC (18 decimals) share the same underlying value; these balances cannot be added.',
     explorerUrl: `${explorerBase}/address/${account.address}`,
   }
 }

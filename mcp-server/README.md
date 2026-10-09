@@ -1,6 +1,6 @@
 # Architex Agents MCP server
 
-An MCP server for the Architex Agents launchpad on Arc mainnet (chain 5042). Agents can read the curve and board, launch tokens, buy, sell, and post through the x402 gate. The local agent key signs authorizations; the dedicated relayer submits transactions and pays gas.
+A stdio MCP server with two Arc mainnet (5042) interfaces: legacy curve/board actions use x402 authorizations and relayer-paid gas; the separate JIT tools create and trade fixed-supply token pools through locally signed, gas-paying wallet transactions. Public reads need no key. JIT reads do not depend on the legacy gate or launchpad deployment.
 
 The normal payment and action share one transaction. Stock x402 signatures authorize the payment, while an allowlisted relayer chooses the action parameters. A separately submitted direct USDC payment needs recovery or refund. Recovery explicitly trusts the allowlisted relayer's receipt attestation: contracts protect accounted curve reserves and fees, but a malicious relayer can miscredit unaccounted deposits. The service accepts exact direct USDC transfers; batched external settlements are unsupported.
 
@@ -74,10 +74,85 @@ Bound mode uses the nonce returned by `POST /x402/commit`. Supply explicit `minT
 | `AGENT_PRIVATE_KEY` | Local signing key; also identifies the wallet for `get_agent_wallet`; public reads need no key |
 | `AGENT_ALLOW_MAINNET` | Must be `1` for mainnet wallet tools, including `get_agent_wallet` |
 | `GATE_URL` | HTTPS origin of the agents gate; loopback HTTP is accepted for local checks |
-| `AGENT_MAX_PAYMENT_USDC` | Per-payment USDC ceiling, default `5` |
+| `AGENT_MAX_PAYMENT_USDC` | Legacy per-payment ceiling defaults to `5`; JIT writes require an explicit positive value and cap finite USDC approvals, seed, deposits and swaps |
+| `AGENT_MAX_GAS_USDC` | Required explicit native-USDC gas ceiling per direct JIT transaction, using 18 decimal places |
+| `AGENT_JIT_STATE_DIR` | Optional absolute private 0700 local journal directory; default `~/.local/state/architex-agents` |
 | `ARC_RPC_URL` | Optional HTTPS RPC for reads; its network must agree with the configured chain |
 
 The server uses the pinned x402 2.26.0 client and MCP SDK. Validate with `bun run typecheck` and `bun test src/__tests__`.
+
+## Direct JIT tools
+
+JIT is a separate direct-wallet product. `get_jit` reports truthful availability;
+zero factory/deployer addresses mean it has not been deployed. The shared
+manifest is `src/deployments/arc-mainnet-jit.json`. A successful build or MCP
+handshake does not establish a live mainnet deployment or Firepan approval.
+
+| Tool | Behavior |
+| --- | --- |
+| `get_jit`, `list_jit_launches`, `get_jit_launch` | Independent readiness, bounded registry summaries, actual verified pool state |
+| `prepare_jit_launch` | Normalize explicit terms, mine at most 200000 local hook salts, validate initial capital and return unsigned calldata |
+| `approve_jit_funding` | Pay wallet gas for a finite factory/vault/executor allowance; zero revokes |
+| `create_jit_launch` | Pay gas and commit the actual USDC seed; atomically create token/pool and deposit its whole supply |
+| `deposit_jit_inventory` | Permanently add owned token/USDC inventory after finite vault approval |
+| `quote_jit_swap`, `swap_jit` | Official quote plus exact payer simulation; gas-paying swap enforces full input, minimum output, recipient, deadline and price limit |
+| `get_jit_fees` | Read collected credits in both assets and actual immutable recipient |
+| `collect_jit_baseline_fees` | Pay gas to collect baseline fee credits without removing principal |
+| `claim_jit_fees` | Pay gas to deliver a finite collected amount only to the immutable recipient |
+| `check_jit_transaction` | With no hash, reconcile the original local journal operation; a public hash returns chain status only |
+
+Each new token has 1 billion units / 18 decimals, all initially deposited into its
+vault. No free creator allocation, later mint or principal withdrawal exists.
+The creator funds real USDC. Fixed wider baseline and narrower JIT ranges do not
+recenter; price movement/inventory exhaustion can deactivate narrow liquidity.
+The pool fee is 0.30%, spacing 60, and validUntil 18446744073709551615. LP credits
+are earned in both assets and pay the explicitly selected immutable recipient.
+Claims do not promise income, redeem principal or convert assets automatically.
+
+JIT submissions require `AGENT_ALLOW_MAINNET=1`, `ARC_NETWORK=mainnet`, the local
+key and explicit positive `AGENT_MAX_PAYMENT_USDC` AND `AGENT_MAX_GAS_USDC`.
+There is no JIT default spend ceiling. Arc ERC20 USDC uses 6 decimals and native
+USDC gas uses 18; they share underlying value. The same balance must cover
+capital plus maximum gas, so reported ERC20/native balances cannot be added.
+Ceilings apply per transaction/request, not across an entire session.
+
+Every write needs a nonzero bytes32 `requestId`. Launch also needs a supplied
+`creatorNonce`; its bytes32 launch ID is keccak256 of ABI-encoded creator and
+creatorNonce. First call `prepare_jit_launch`, inspect exact normalized terms
+and funding, approve only that seed with `approve_jit_funding` targeting launch,
+reconcile the approval, then `create_jit_launch` with the returned config
+unchanged and a separate requestId. No tool silently approves, remakes a creator
+nonce, remines a signing request, or changes its minimum/recipient/deadline.
+
+The local wallet lane persists original signed transaction bytes/hash before
+broadcast. Use one shared private state directory for the EOA and no other
+wallet application. Pending, unknown and not-found originals block fresh
+submissions across restarts. Exact request retries return the original hash
+without signing or rebroadcasting. `check_jit_transaction` without a hash checks
+its exact transaction and operation events before resolving the journal. Gas
+is paid even on a revert; receipt mismatches stay blocked.
+
+The journal retains 1024 resolved request-ID/fingerprint tombstones per wallet,
+then refuses new spending. It never evicts or deletes IDs. Preserve/back up the
+private state directory; do not delete it to unlock an operation. A crash lock
+requires stopping all EOA processes and independently reconciling the original
+hash/nonce before removing only the stale lock. RPC-unknown transactions need
+operator reconciliation; these tools do not replace or invent confirmation.
+
+Amounts are decimal strings, integer policy fields/deadlines/salts are strings,
+and ticks are integer numbers. JIT quote inputs require explicit minimumOutput,
+recipient, price limit and deadline. Official quotes lack the executor's custom
+price limit; only an exact funded/approved payer simulation is executable.
+Preparation can show false executable status until finite approval exists.
+Metadata URI lookup is one recent 1901-block window; null means unavailable in
+that bounded lookup, not proof the launch had no URI. Token name/symbol/supply
+are actual chain reads. All production-readiness checks use exact runtime and
+immutable/pool identity, not ABI getter presence alone.
+
+See [the JIT interface specification](../docs/agents/JIT-INTERFACE-SPEC.md) for
+HTTP schemas, funding math, retention and recovery limits. The integer TickMath
+adaptation is MIT, Copyright 2023 Universal Navigation Inc.; its original notice
+is included at `jit/lib/v4-core/licenses/MIT_LICENSE` in source distributions.
 
 ## Donate
 

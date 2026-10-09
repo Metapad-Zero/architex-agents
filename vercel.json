@@ -5,10 +5,22 @@
     {
       "source": "/downloads/architex-agents-mcp.tar.gz",
       "headers": [
-        { "key": "Content-Type", "value": "application/gzip" },
-        { "key": "Content-Disposition", "value": "attachment; filename=\"architex-agents-mcp.tar.gz\"" },
-        { "key": "Content-Encoding", "value": "identity" },
-        { "key": "Cache-Control", "value": "no-store" }
+        {
+          "key": "Content-Type",
+          "value": "application/gzip"
+        },
+        {
+          "key": "Content-Disposition",
+          "value": "attachment; filename=\"architex-agents-mcp.tar.gz\""
+        },
+        {
+          "key": "Content-Encoding",
+          "value": "identity"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
       ]
     },
     {
@@ -50,10 +62,21 @@
     {
       "source": "/openapi.json",
       "destination": "/api/x402?path=openapi.json"
+    },
+    {
+      "source": "/jit",
+      "destination": "/api/jit"
+    },
+    {
+      "source": "/jit/:path*",
+      "destination": "/api/jit?path=:path*"
     }
   ],
   "functions": {
     "api/x402.ts": {
+      "maxDuration": 60
+    },
+    "api/jit.ts": {
       "maxDuration": 60
     }
   }
