@@ -1,0 +1,295 @@
+{
+  "schema_version": 1,
+  "recorded_at_utc": "2026-10-09T07:15:10.129341+00:00",
+  "milestone": "1 - bounded core prototype and local Arc mainnet compatibility verification",
+  "release_status": "No Architex JIT contracts deployed; no funded mainnet transactions or signatures",
+  "chain": {
+    "name": "Arc mainnet",
+    "chain_id": 5042,
+    "rpc_url": "https://rpc.mainnet.arc.io",
+    "fork_block_number": 25019963,
+    "fork_block_hash": "0x43695925c3971843bdffd6149353ac880d42e6003b785d55d8fdc01b52926d38",
+    "block_timestamp_utc": "2026-10-09T05:17:28+00:00",
+    "block_gas_limit": 30000000,
+    "base_fee_per_gas_native_units": 20000000000
+  },
+  "contracts": {
+    "pool_manager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+    "erc20_usdc": "0x3600000000000000000000000000000000000000",
+    "erc20_usdc_decimals": 6,
+    "native_usdc_decimals": 18,
+    "native_units_per_erc20_unit": 1000000000000
+  },
+  "dependency": {
+    "name": "Uniswap/v4-core",
+    "tag": "v4.0.0",
+    "revision": "e50237c43811bd9b526eff40f26772152a42daba",
+    "archive_sha256": "606922020d200ac1b1492ff2c12656bb908881908f9f166477e4e1fdc3cd36cd",
+    "vendored_file_manifest": "jit/lib/v4-core/PIN.json",
+    "parameter_types": [
+      "IPoolManager.SwapParams",
+      "IPoolManager.ModifyLiquidityParams"
+    ],
+    "production_import_policy": "MIT-only transitive closure; no StateLibrary, TransientStateLibrary, upstream test helpers, or original core implementation imports"
+  },
+  "runtime_reconstruction": {
+    "match": true,
+    "deployed_bytes": 24009,
+    "reconstructed_bytes": 24009,
+    "deployed_keccak256": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626",
+    "reconstructed_keccak256": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626",
+    "compiler": "0.8.26",
+    "settings": {
+      "evmVersion": "cancun",
+      "viaIR": true,
+      "optimizer": {
+        "enabled": true,
+        "runs": 44444444
+      },
+      "metadata": {
+        "bytecodeHash": "none"
+      }
+    },
+    "immutable_replacements": {
+      "511": [
+        {
+          "start": 13606,
+          "length": 32
+        }
+      ]
+    },
+    "immutable_value": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+    "method": "Compile unmodified pinned core with original settings; fill the compiler-reported NoDelegateCall.original address immutable; compare every deployed byte, including metadata",
+    "immutable_source": "src/NoDelegateCall.sol: original",
+    "verified_source_metadata": {
+      "explorer_api": "HTTP 403; not obtained",
+      "sourcify_full_match": "HTTP 404; not obtained"
+    },
+    "limit": "Matching runtime does not identify a unique upstream commit, prove constructor history or audit integration code; several source revisions may compile identically"
+  },
+  "isolated_engine_compiler": {
+    "solc": "0.8.26",
+    "evm_version": "cancun",
+    "via_ir": true,
+    "optimizer_runs": 200,
+    "root_project_evm_version_unchanged": "paris"
+  },
+  "mainnet_rpc_simulations": [
+    {
+      "name": "transient_storage_opcode_probe",
+      "method": "eth_call with code state override at pinned block",
+      "target": "0x1000000000000000000000000000000000000002",
+      "runtime_code": "0x602a5f5d5f5c5f5260205ff3",
+      "operations": [
+        "PUSH0",
+        "TSTORE",
+        "TLOAD"
+      ],
+      "returned": "0x000000000000000000000000000000000000000000000000000000000000002a",
+      "expected_uint256": 42,
+      "passed": true
+    },
+    {
+      "name": "actual_erc20_usdc_transfer_probe",
+      "method": "eth_call with synthetic sender native-balance override at pinned block",
+      "sender": "0x1000000000000000000000000000000000000001",
+      "sender_native_balance": "50000000000000000000",
+      "erc20_transfer_recipient": "0x1000000000000000000000000000000000000003",
+      "erc20_transfer_amount": 1000000,
+      "returned": "0x0000000000000000000000000000000000000000000000000000000000000001",
+      "expected_bool": true,
+      "passed": true
+    }
+  ],
+  "local_test_results": {
+    "status": "passed",
+    "command": "forge test --root jit --no-match-path 'test/fork/*'",
+    "engine_regressions_passed": 45,
+    "engine_failed": 0,
+    "fuzz_cases": 128,
+    "fuzz_seed": "0x4152434849544558",
+    "invariant_properties_passed": 5,
+    "invariant_runs_per_property": 128,
+    "invariant_calls_per_property": 8192,
+    "invariant_reverts": 0,
+    "coverage": [
+      "same-transaction add/swap/remove event order and actual active liquidity",
+      "exact input/output in both directions",
+      "direct router and repeated swaps in one unlock",
+      "partial fills and full rollback",
+      "empty, expired, boundary and minimum-size JIT fallback",
+      "automatic baseline fee reservation",
+      "cash and ERC6909 fee payouts preserve available inventory",
+      "donations and adversarial transfers/reentrancy",
+      "per-tick, combined-liquidity and signed-amount constructor traps",
+      "both near-int128 principal-plus-fee removal regressions"
+    ],
+    "limit": "Original pinned PoolManager and freely minted model launch/quote tokens; no market prices or production capital"
+  },
+  "arc_fork_tooling": {
+    "upstream": "https://github.com/circlefin/arc-foundry",
+    "release": "v0.8.0-2",
+    "binary_commit": "d497beea7096ff2a8e583c8b307941f24a61b06b",
+    "asset": "arc-foundry-v0.8.0-2-aarch64-apple-darwin.tar.gz",
+    "asset_sha256": "90e3eefbf7dd80652fd283a7562e9263301a48797bc2224cc21a3964e2d5db87",
+    "checksum_verified": true,
+    "network_flag": "--network arc",
+    "installation": "Downloaded and extracted to a temporary directory only"
+  },
+  "sources": [
+    "https://developers.uniswap.org/docs/protocols/v4/deployments",
+    "https://github.com/Uniswap/v4-core/tree/e50237c43811bd9b526eff40f26772152a42daba",
+    "https://github.com/Uniswap/v4-core/blob/e50237c43811bd9b526eff40f26772152a42daba/foundry.toml",
+    "https://github.com/Uniswap/v4-core/blob/e50237c43811bd9b526eff40f26772152a42daba/licenses/BUSL_LICENSE",
+    "https://github.com/Uniswap/v4-core/blob/e50237c43811bd9b526eff40f26772152a42daba/licenses/MIT_LICENSE",
+    "https://docs.arc.io/arc/references/connect-to-arc",
+    "https://docs.arc.io/arc/references/evm-differences",
+    "https://docs.arc.io/arc/tutorials/install-arc-foundry",
+    "https://github.com/circlefin/arc-foundry/releases/tag/v0.8.0-2"
+  ],
+  "arc_mainnet_fork_results": {
+    "ethereum_forge": {
+      "command": "ARC_MAINNET_RPC=https://rpc.mainnet.arc.io forge test --root jit --match-path 'test/fork/*'",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 1,
+      "skipped_test": "test_fork_realNativeUSDCPositiveLifecycleOnArcRuntime requires Arc Forge and ARC_NATIVE_FORK=true",
+      "limit": "Actual deployed PoolManager plus a distinct model quote token for positive swaps; actual USDC metadata/refusal checks only"
+    },
+    "arc_forge": {
+      "command": "ARC_MAINNET_RPC=https://rpc.mainnet.arc.io ARC_NATIVE_FORK=true <checksum-verified-arc-forge> test --root jit --network arc --match-path 'test/fork/*' -vv",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "positive_native_usdc_test": "test_fork_realNativeUSDCPositiveLifecycleOnArcRuntime",
+      "actual_usdc_and_pool_manager_code_unchanged": true,
+      "synthetic_native_harness_balance": "1100000000000000000000000",
+      "initial_real_erc20_usdc_harness_balance": "1100000000000",
+      "freely_minted_model_launch_token_decimals": 18,
+      "real_usdc_decimals": 6,
+      "pool_fee_parts_per_million": 3000,
+      "first_swap": {
+        "input_currency": "real ERC20 USDC",
+        "input_raw": "1000000000",
+        "output_currency": "model launch token",
+        "output_raw": "1000117170523647399695",
+        "harness_execution_gas": 705465
+      },
+      "second_swap": {
+        "input_currency": "model launch token",
+        "input_raw": "1000000000000000000000",
+        "output_currency": "real ERC20 USDC",
+        "output_raw": "993894017",
+        "harness_execution_gas": 566177
+      },
+      "pre_claim": {
+        "model_token_cash": "845595972237638574243905",
+        "model_token_claims": "59212456070300138364236",
+        "usdc_cash": "846150392956",
+        "usdc_claims": "59005767992"
+      },
+      "fees_credited_and_claimed": {
+        "model_token_raw": "2999999999999999999",
+        "usdc_raw": "2999999"
+      },
+      "post_claim": {
+        "model_token_cash": "845592972237638574243906",
+        "model_token_claims": "59212456070300138364236",
+        "usdc_cash": "846147392957",
+        "usdc_claims": "59005767992"
+      },
+      "fee_claim_preserved_available_inventory": true,
+      "completed_jit_cycles": 2,
+      "active_jit_liquidity": 0,
+      "baseline_liquidity": "100000000000000000",
+      "open_currency_deltas": 0,
+      "whole_test_gas_including_fixture_and_salt_mining": 7308697,
+      "limit": "Synthetic funding and model launch token. Per-swap gas is gasleft measurement inside one harness transaction with warmness effects; it excludes transaction intrinsic gas and is not a paid mainnet receipt or standalone cold-transaction estimate."
+    }
+  },
+  "equal_capital_comparisons": {
+    "method": "Snapshot identical initial cash and baseline liquidity; execute JIT-enabled trade; revert snapshot; expire JIT policy; repeat the identical input against the baseline with JIT inventory idle",
+    "token_to_quote": {
+      "model_token_input_raw": "5000000000000000000000",
+      "jit_model_usdc_output_raw": "4955358351",
+      "baseline_model_usdc_output_raw": "4731651327",
+      "jit_harness_execution_gas": 654810,
+      "baseline_harness_execution_gas": 360516
+    },
+    "quote_to_token": {
+      "model_usdc_input_raw": "5000000000",
+      "jit_model_token_output_raw": "4991094976658144218218",
+      "baseline_model_token_output_raw": "4765001287335211034757",
+      "jit_harness_execution_gas": 655743,
+      "baseline_harness_execution_gas": 356065
+    },
+    "limit": "Model prices and capital; disabled inventory remains idle. This is not an optimized static all-capital comparison, a profitability result or paid mainnet gas evidence."
+  },
+  "production_contract_builds": {
+    "ArchitexJITVault": {
+      "source_sha256": "c409e0e00018a0c6edb819d5ac0200a048390605e68ab366b881490a69af41ad",
+      "runtime_bytes": 5776,
+      "creation_bytes": 6537,
+      "within_eip170_runtime_limit": true
+    },
+    "ArchitexJITHook": {
+      "source_sha256": "e0a4857d1be28b744bbcb694e73851f7d7bf207c90ef23952515a1a9a0044a39",
+      "runtime_bytes": 12148,
+      "creation_bytes": 16846,
+      "within_eip170_runtime_limit": true
+    },
+    "ArchitexJITExecutor": {
+      "source_sha256": "a85b76068c4a748796ff27007cb6b58d4c59dd3592b864e37eebbf91113d3f1b",
+      "runtime_bytes": 3577,
+      "creation_bytes": 4311,
+      "within_eip170_runtime_limit": true
+    }
+  },
+  "independent_source_review": {
+    "reviewer": "Separate read-only Codex agent",
+    "remaining_concrete_findings": 0,
+    "fixes_verified": [
+      "reject unrepresentable initial baseline and whole-range JIT asset amounts",
+      "collect temporary-position fees separately before principal removal",
+      "collect baseline fees each swap"
+    ],
+    "dependency_file_hashes_verified": 49,
+    "production_source_and_dependency_closure_files": 27,
+    "production_transitive_spdx": "MIT",
+    "limit": "Source review, not an external audit or independent funded acceptance. Binding remains a trusted one-time deployment step."
+  },
+  "existing_product_regression_results": {
+    "unchanged_root_contract_tests": {
+      "passed": 158,
+      "failed": 0,
+      "skipped": 0
+    },
+    "javascript_tests": {
+      "passed": 211,
+      "failed": 0
+    },
+    "mcp_tests": {
+      "passed": 10,
+      "failed": 0
+    },
+    "root_lint_and_typecheck": "passed",
+    "mcp_typecheck": "passed",
+    "site_and_mcp_package_build": "passed",
+    "relayer_build": "passed",
+    "root_mainnet_fork_with_configured_factory_router_lens": {
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "rpc_block": 25033066,
+      "limit": "Actual core wiring and native-USDC refusal/metadata checks; positive payment/graduation uses a distinct model USDC"
+    }
+  },
+  "release_gates": {
+    "milestone_1_core_and_arc_fork_verification": "complete",
+    "production_custody_capital_policy_and_creator_fee_split": "follow-on scope; not established by this milestone",
+    "signed_gateway_mcp_and_new_launch_integration": "follow-on scope; unchanged",
+    "production_jit_deployments": "none",
+    "funded_mainnet_acceptance": "not performed",
+    "firepan": "owner release gate outstanding"
+  }
+}
